@@ -36,7 +36,7 @@ endif
 qwt: $(buildlib)/libomqwt@SHREXT@
 
 qwt-build: mkbuilddirs
-	$(MAKE) -C qwt -f Makefile.unix
+	$(MAKE) -C qwt -f Makefile.unix CXXFLAGS+="-DLOG_MIN=1e-20 -DLOG_MAX=1e20"
 	test -f $(builddir_inc)/omplot/qwt/qwt_global.h || ($(MAKE) -C qwt install && chmod 644 qwt/build/include/*.h && cp -a qwt/build/include/*.h $(builddir_inc)/omplot/qwt)
 
 mkbuilddirs:

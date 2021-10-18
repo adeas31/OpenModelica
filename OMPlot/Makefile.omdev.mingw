@@ -15,7 +15,7 @@ $(buildlib)/libomqwt.a: mkbuilddirs qwt-build
 qwt: $(buildlib)/libomqwt.a
 
 qwt-build: mkbuilddirs
-	$(MAKE) -C qwt -f Makefile.omdev.mingw
+	$(MAKE) -C qwt -f Makefile.omdev.mingw CXXFLAGS+="-DLOG_MIN=1e-20 -DLOG_MAX=1e20"
 
 mkbuilddirs:
 	mkdir -p $(builddir_inc)/omplot/qwt

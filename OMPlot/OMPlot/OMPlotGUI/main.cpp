@@ -39,7 +39,6 @@
 #include <QtGui/QApplication>
 #endif
 
-
 #include "PlotMainWindow.h"
 #include "PlotApplication.h"
 

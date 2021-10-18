@@ -195,7 +195,6 @@ void Legend::mouseDoubleClickEvent(QMouseEvent *event)
       } else {
         pPlotCurve->toggleVisibility(false);
       }
-
     }
   }
 }

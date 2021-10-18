@@ -1796,44 +1796,38 @@ void PlotWindow::fitInView()
 
 void PlotWindow::setLogX(bool on)
 {
-  if(on)
-  {
+  if (on) {
 #if QWT_VERSION >= 0x060100
     mpPlot->setAxisScaleEngine(QwtPlot::xBottom, new QwtLogScaleEngine);
 #else
     mpPlot->setAxisScaleEngine(QwtPlot::xBottom, new QwtLog10ScaleEngine);
 #endif
-  }
-  else
-  {
+  } else {
     mpPlot->setAxisScaleEngine(QwtPlot::xBottom, new QwtLinearScaleEngine);
   }
   mpPlot->setAxisAutoScale(QwtPlot::xBottom);
-  mpLogXCheckBox->blockSignals(true);
+  bool state = mpLogXCheckBox->blockSignals(true);
   mpLogXCheckBox->setChecked(on);
-  mpLogXCheckBox->blockSignals(false);
-  mpPlot->replot();
+  mpLogXCheckBox->blockSignals(state);
+  updatePlot();
 }
 
 void PlotWindow::setLogY(bool on)
 {
-  if(on)
-  {
+  if (on) {
 #if QWT_VERSION >= 0x060100
     mpPlot->setAxisScaleEngine(QwtPlot::yLeft, new QwtLogScaleEngine);
 #else
     mpPlot->setAxisScaleEngine(QwtPlot::yLeft, new QwtLog10ScaleEngine);
 #endif
-  }
-  else
-  {
+  } else {
     mpPlot->setAxisScaleEngine(QwtPlot::yLeft, new QwtLinearScaleEngine);
   }
   mpPlot->setAxisAutoScale(QwtPlot::yLeft);
-  mpLogYCheckBox->blockSignals(true);
+  bool state = mpLogYCheckBox->blockSignals(true);
   mpLogYCheckBox->setChecked(on);
-  mpLogYCheckBox->blockSignals(false);
-  mpPlot->replot();
+  mpLogYCheckBox->blockSignals(state);
+  updatePlot();
 }
 
 void PlotWindow::setAutoScale(bool on)
