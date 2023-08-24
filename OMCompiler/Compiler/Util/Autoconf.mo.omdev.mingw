@@ -9,26 +9,24 @@ encapsulated package Autoconf
   constant String linkType = " -Wl,-B$(OMC_LDFLAGS_LINK_TYPE) " "OMC_LDFLAGS_LINK_TYPE is set in the Makefile, can be overrided when calling make";
   constant String configureCommandLine = "Manually created Makefiles for OMDev";
   constant String os = "Windows_NT";
-  constant String make = "make";
+  // For anything that is issued through SystemCall use this mingw32-make (instead of just 'make'
+  // which is the MSYS make.) since the latter is not supposed to be used on Windows shells.
+  // (systemCall uses 'cmd \c' to issue commands.)
+  constant String make = "mingw32-make";
+  constant String cmake = "cmake";
   constant String exeExt = ".exe";
   constant String dllExt = ".dll";
   constant String libFortran = if not isNewOMDev then "-lgfortranbegin " else " ";
   constant String libMsvcrt = if not isNewOMDev then "-lmsvcrt " else " ";
-  constant String ldflags_suitesparse = " -lumfpack -lklu -lcolamd -lbtf -lamd -lsuitesparseconfig";
-  constant String ldflags_sundials = " -lsundials_nvecserial -lsundials_sunmatrixdense -lsundials_sunmatrixsparse" +
-                                     " -lsundials_sunlinsoldense -lsundials_sunlinsolklu -lsundials_sunlinsollapackdense -lsundials_sunlinsolspbcgs -lsundials_sunlinsolspfgmr -lsundials_sunlinsolspgmr -lsundials_sunlinsolsptfqmr -lsundials_sunnonlinsolnewton" +
-                                     " -lsundials_cvode -lsundials_cvodes -lsundials_idas -lsundials_kinsol";
-  constant String ldflags_basic = linkType + "-lomcgc -lregex -ltre -lintl -liconv -lexpat -static-libgcc -luuid -loleaut32 -lole32 -limagehlp -lws2_32 -llis" +
-                                  ldflags_sundials +
-                                  ldflags_suitesparse +
-                                  " -lipopt -lcoinmumps -lpthread -lm " +
+  constant String ldflags_basic = " -lomcgc " + linkType + "-static-libgcc -luuid -loleaut32 -lole32 -limagehlp -lws2_32" +
+                                  " -lpthread -lm " +
                                   libFortran +
                                   "-lgfortran -lquadmath -lmingw32 -lgcc_eh -lmoldname -lmingwex " +
                                   libMsvcrt +
-                                  "-luser32 -lkernel32 -ladvapi32 -lshell32 -lopenblas -lcminpack -Wl,-Bdynamic";
+                                  "-luser32 -lkernel32 -ladvapi32 -lshell32 -lopenblas -Wl,-Bdynamic";
 
   constant String ldflags_runtime = " -lOpenModelicaRuntimeC" + ldflags_basic;
-  constant String ldflags_runtime_sim = linkType + "-lSimulationRuntimeC -Wl,-Bdynamic " + ldflags_basic + " -lwsock32 " + linkType + " -lstdc++ -Wl,-Bdynamic ";
+  constant String ldflags_runtime_sim = "-lSimulationRuntimeC -Wl,-Bdynamic -lomcgc -lopenblas" + linkType + " -lstdc++ -Wl,-Bdynamic ";
   constant String ldflags_runtime_fmu = linkType + "-lregex -ltre -lintl -liconv -static-libgcc -lpthread -lm " +
                                         libFortran +
                                         "-lgfortran -lquadmath -lmingw32 -lgcc_eh -lmoldname -lmingwex " +

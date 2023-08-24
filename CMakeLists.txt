@@ -1,6 +1,19 @@
 
 cmake_minimum_required(VERSION 3.14)
-project(OpenModelica C CXX Fortran)
+
+option(OM_WITH_VCPKG "Use vcpkg to manage dependencies." OFF)
+if(OM_WITH_VCPKG)
+  set(X_VCPKG_APPLOCAL_DEPS_INSTALL ON)
+  set(CMAKE_TOOLCHAIN_FILE vcpkg/scripts/buildsystems/vcpkg.cmake)
+endif()
+
+project(OpenModelica
+        HOMEPAGE_URL "https://openmodelica.org/"
+        LANGUAGES C CXX)
+
+# Any custom Find* modules should be placed here.
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules/")
+
 
 #########################################################################################################
 ## Enable verbose Makefiles if you want to debug. (you can also instead use 'make VERBOSE=1')
@@ -20,11 +33,34 @@ include(cmake/omc_utils.cmake)
 include(cmake/omc_target_info.cmake)
 include(cmake/omc_check_exists.cmake)
 
+## Get the revision info. The version is saved in the variable SOURCE_REVISION
+include(cmake/omc_git_revision.cmake)
+
+# Include the small thread library setup we have. This provides the library
+# OMCPThreads::OMCPThreads which gives us a PThreads library on Windows as
+# well as linux. See the file for more info.
+include(cmake/OMCPThreads.cmake)
+
+omc_add_to_report(CMAKE_VERSION)
 # Add the compiler ids to the report for convenience.
 omc_add_to_report(CMAKE_C_COMPILER_ID)
 omc_add_to_report(CMAKE_CXX_COMPILER_ID)
 omc_add_to_report(CMAKE_Fortran_COMPILER_ID)
 omc_add_to_report(CMAKE_LIBRARY_ARCHITECTURE)
+
+
+## OPTIONS #################################################################################################
+omc_option(OM_ENABLE_GUI_CLIENTS "Enable, build, and install the qt based GUI clients." ON)
+
+omc_option(OM_ENABLE_ENCRYPTION "Enable and build the OpenModelica Encryption support module. " OFF)
+
+## Use ccache to speedup compilation! It is important to use ccache if you can.
+## You get almost no op compilations (for unmodified files) at the cost of some memory.
+## This is usefull, for example, in cases where you change branches often or need to clean
+## for some reason. However, it is even more important with OMC because we generate C sources
+## from MetaModelica files whenever they change. This causes CMake to issue compilations of
+## dependent source files because headers are changed. ccache will essentially eliminate that cost.
+omc_option(OM_USE_CCACHE "Use ccache to speedup compilations." ON)
 
 
 ### Standards ###############################################################################################
@@ -47,15 +83,10 @@ if(NOT CMAKE_BUILD_TYPE)
 endif(NOT CMAKE_BUILD_TYPE)
 omc_add_to_report(CMAKE_BUILD_TYPE)
 
-## Use ccache to speedup compilation! It is important to use ccache if you can.
-## You get almost no op compilations (for unmodified files) at the cost of some memory.
-## This is usefull, for example, in cases where you change branches often or need to clean
-## for some reason. However, it is even more importatn with OMC because we generate C sources
-## from MetaModelica files whenever they change. This causes CMake to issue compilations of
-## dependent source files because headers are changed. This will pretty much nullify that.
-omc_option(OMC_USE_CCACHE "Use ccache to speedup compilations." ON)
+## Set position independent code for everything built in OpenModelica.
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-if(OMC_USE_CCACHE)
+if(OM_USE_CCACHE)
   find_program(CCACHE_PROGRAM ccache)
   if(CCACHE_PROGRAM)
     message(STATUS "Found ccache. It will be used for compilation C/C++ sources")
@@ -64,7 +95,7 @@ if(OMC_USE_CCACHE)
     omc_add_to_report(CCACHE_PROGRAM)
   else()
     message(FATAL_ERROR "ccache program not found. It is highly recommended to use ccache for compilation of OpenModelica. Please install ccache and rerun configuration.
-            You can disable this check by specifying -DOMC_USE_CCACHE=OFF to CMake configuration command.")
+            You can disable this check by specifying -DOM_USE_CCACHE=OFF to CMake configuration command.")
   endif()
 endif()
 
@@ -72,18 +103,6 @@ endif()
 # a more accurate code navigation and intellisense. E.g. includes can be pinpointed instead of
 # using glob expressions to parse everything.
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-# Write out a compiler detection header. checkout the file <build_dir>/omc_compiler_detection.h to
-# get an idea of what it means. We intend to use this for portability reasons in the future.
-# You know. things like is it ctime_s() or ctime_r(), MvFileEx() vs rename() and the like.
-include(WriteCompilerDetectionHeader)
-write_compiler_detection_header(
-  FILE omc_compiler_detection.h
-  PREFIX OMC
-  COMPILERS GNU Clang MSVC
-  FEATURES cxx_static_assert
-)
-
 
 ### Installation configurations ###############################################################################
 # Install following GNU conventions (i.e., bin, lib, include, share ...)
@@ -93,7 +112,7 @@ include(GNUInstallDirs)
 # unintentionally. If the user has not specified anything default to an install_cmake dir in the root
 # build directory.
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
-    set(CMAKE_INSTALL_PREFIX ${PROJECT_BINARY_DIR}/install_cmake CACHE PATH "Default installation directory" FORCE)
+    set(CMAKE_INSTALL_PREFIX "${PROJECT_BINARY_DIR}/install_cmake" CACHE PATH "Default installation directory" FORCE)
     # Prevent sub-projects from changing it by checking CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT after this
     set(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT FALSE)
     message(WARNING "No installation directory specified. Defaulting to: ${CMAKE_INSTALL_PREFIX}")
@@ -101,24 +120,57 @@ endif()
 omc_add_to_report(CMAKE_INSTALL_PREFIX)
 
 # We prefer to install libs to "<library architecture>/omc" dir inside lib directory (e.g lib/x86_64-linux-gnu/omc/).
-set(CMAKE_INSTALL_LIBDIR ${CMAKE_INSTALL_LIBDIR}/${CMAKE_LIBRARY_ARCHITECTURE}/omc/)
+set(CMAKE_INSTALL_LIBDIR "${CMAKE_INSTALL_LIBDIR}/${CMAKE_LIBRARY_ARCHITECTURE}/omc/")
 
 # We prefer to install headers to "include/omc" dir inside.
-set(CMAKE_INSTALL_INCLUDEDIR ${CMAKE_INSTALL_INCLUDEDIR}/omc/)
+set(CMAKE_INSTALL_INCLUDEDIR "${CMAKE_INSTALL_INCLUDEDIR}/omc/")
+
+# On macOS we want BUNDLEs (.app) to go to an 'Applications/' directory instead of a 'bin/' directory
+if(APPLE)
+  set(OM_MACOS_INSTALL_BUNDLEDIR "Applications/")
+endif()
 
 ## Set the adjusted installation lib directory as an rpath for all installed binaries.
-## This is useful for those binaries that end up in bin/ directory but not for
-## others as it is a relative path to the lib dir from <build_dir>/<some_dir>.
-## Maybe there is a better way to do this but it should suffice for now.
-set(CMAKE_INSTALL_RPATH "$ORIGIN:$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
+## Assumes binaries end up in either 'bin' or 'lib' AND also assumes that 'bin' and 'lib' are sibling directories.
+if(APPLE)
+  ## MacOS Bundles end up in bin/<BundleName>.app/Contents/MacOS/
+  ## So make sure that the lib dir is referenced from that location as well
+  set(CMAKE_INSTALL_RPATH "@loader_path/../${CMAKE_INSTALL_LIBDIR};@loader_path/../../../../${CMAKE_INSTALL_LIBDIR}")
+else()
+  set(CMAKE_INSTALL_RPATH "$ORIGIN;$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
+endif()
 
 ## Do not print unnecessary install messages when nothing has actually changed.
 set(CMAKE_INSTALL_MESSAGE LAZY)
 
-
+# Set a 'catch-all' install component "unknown-install-component". If you see some install component under this
+# id, then you know that something has not set an install component either explicitly on the install() command
+# or at higher level using 'set(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME <id>)' to cover all install() commands
+# issues after it.
+set(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME "unknown-install-component")
 
 ## Subdirectories ##########################################################################################
+# If asked for encryption support, add and configure the OMEncryption directory.
+if(OM_ENABLE_ENCRYPTION)
+  omc_add_subdirectory(OMEncryption)
+endif()
+
 omc_add_subdirectory(OMCompiler)
+
+if(OM_ENABLE_GUI_CLIENTS)
+  omc_add_subdirectory(OMParser)
+  omc_add_subdirectory(OMPlot)
+  omc_add_subdirectory(OMShell)
+  omc_add_subdirectory(OMNotebook)
+  include(omsimulator.cmake)
+  omc_add_subdirectory(OMEdit)
+  omc_add_subdirectory(OMSens_Qt)
+endif()
+
+omc_add_subdirectory(libraries)
+omc_add_subdirectory(testsuite)
+
+include(cmake/packaging/common.cmake)
 
 
 ## Report some status info.

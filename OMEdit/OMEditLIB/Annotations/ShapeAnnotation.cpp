@@ -43,7 +43,6 @@
 #include "Plotting/VariablesWidget.h"
 #include "Util/ResourceCache.h"
 
-
 QString stripDynamicSelect(const QString &str)
 {
   return str.startsWith("DynamicSelect") ?
@@ -91,6 +90,19 @@ void GraphicItem::parseShapeAnnotation(QString annotation)
   mRotation.parse(list.at(2));
 }
 
+void GraphicItem::parseShapeAnnotation(ModelInstance::Shape *pShape)
+{
+  // if first item of list is true then the shape should be visible.
+  mVisible = pShape->getVisible();
+  mVisible.evaluate(pShape->getParentModel());
+  // 2nd item is the origin
+  mOrigin = pShape->getOrigin();
+  mOrigin.evaluate(pShape->getParentModel());
+  // 3rd item is the rotation
+  mRotation = pShape->getRotation();
+  mRotation.evaluate(pShape->getParentModel());
+}
+
 /*!
  * \brief GraphicItem::getOMCShapeAnnotation
  * Returns the annotation values of the GraphicItem in format as returned by OMC.
@@ -100,14 +112,11 @@ QStringList GraphicItem::getOMCShapeAnnotation()
 {
   QStringList annotationString;
   /* get visible */
-  annotationString.append(mVisible ? "true" : "false");
+  annotationString.append(mVisible.toQString());
   /* get origin */
-  QString originString;
-  originString.append("{").append(QString::number(mOrigin.x())).append(",");
-  originString.append(QString::number(mOrigin.y())).append("}");
-  annotationString.append(originString);
+  annotationString.append(mOrigin.toQString());
   /* get rotation */
-  annotationString.append(QString::number(mRotation));
+  annotationString.append(mRotation.toQString());
   return annotationString;
 }
 
@@ -120,20 +129,16 @@ QStringList GraphicItem::getShapeAnnotation()
 {
   QStringList annotationString;
   /* get visible */
-  if (!mVisible) {
-    annotationString.append("visible=false");
+  if (mVisible.isDynamicSelectExpression() || mVisible.toQString().compare(QStringLiteral("true")) != 0) {
+    annotationString.append(QString("visible=%1").arg(mVisible.toQString()));
   }
   /* get origin */
-  if (mOrigin != QPointF(0, 0)) {
-    QString originString;
-    originString.append("origin=");
-    originString.append("{").append(QString::number(mOrigin.x())).append(",");
-    originString.append(QString::number(mOrigin.y())).append("}");
-    annotationString.append(originString);
+  if (mOrigin.isDynamicSelectExpression() || mOrigin.toQString().compare(QStringLiteral("{0,0}")) != 0) {
+    annotationString.append(QString("origin=%1").arg(mOrigin.toQString()));
   }
   /* get rotation */
-  if (mRotation != 0) {
-    annotationString.append(QString("rotation=").append(QString::number(mRotation)));
+  if (mRotation.isDynamicSelectExpression() || mRotation.toQString().compare(QStringLiteral("0")) != 0) {
+    annotationString.append(QString("rotation=%1").arg(mRotation.toQString()));
   }
   return annotationString;
 }
@@ -188,6 +193,20 @@ void FilledShape::parseShapeAnnotation(QString annotation)
   mLineThickness.parse(list.at(7));
 }
 
+void FilledShape::parseShapeAnnotation(ModelInstance::Shape *pShape)
+{
+  mLineColor = pShape->getLineColor();
+  mLineColor.evaluate(pShape->getParentModel());
+  mFillColor = pShape->getFillColor();
+  mFillColor.evaluate(pShape->getParentModel());
+  mLinePattern = pShape->getPattern();
+  mLinePattern.evaluate(pShape->getParentModel());
+  mFillPattern = pShape->getFillPattern();
+  mFillPattern.evaluate(pShape->getParentModel());
+  mLineThickness = pShape->getLineThickness();
+  mLineThickness.evaluate(pShape->getParentModel());
+}
+
 /*!
  * \brief FilledShape::getOMCShapeAnnotation
  * Returns the annotation values of the FilledShape in format as returned by OMC.
@@ -197,27 +216,15 @@ QStringList FilledShape::getOMCShapeAnnotation()
 {
   QStringList annotationString;
   /* get the line color */
-  QString lineColorString;
-  lineColorString.append("{");
-  lineColorString.append(QString::number(mLineColor.red())).append(",");
-  lineColorString.append(QString::number(mLineColor.green())).append(",");
-  lineColorString.append(QString::number(mLineColor.blue()));
-  lineColorString.append("}");
-  annotationString.append(lineColorString);
+  annotationString.append(mLineColor.toQString());
   /* get the fill color */
-  QString fillColorString;
-  fillColorString.append("{");
-  fillColorString.append(QString::number(mFillColor.red())).append(",");
-  fillColorString.append(QString::number(mFillColor.green())).append(",");
-  fillColorString.append(QString::number(mFillColor.blue()));
-  fillColorString.append("}");
-  annotationString.append(fillColorString);
+  annotationString.append(mFillColor.toQString());
   /* get the line pattern */
-  annotationString.append(StringHandler::getLinePatternString(mLinePattern));
+  annotationString.append(mLinePattern.toQString());
   /* get the fill pattern */
-  annotationString.append(StringHandler::getFillPatternString(mFillPattern));
+  annotationString.append(mFillPattern.toQString());
   // get the thickness
-  annotationString.append(QString::number(mLineThickness));
+  annotationString.append(mLineThickness.toQString());
   return annotationString;
 }
 
@@ -230,36 +237,40 @@ QStringList FilledShape::getShapeAnnotation()
 {
   QStringList annotationString;
   /* get the line color */
-  if (mLineColor != Qt::black) {
-    QString lineColorString;
-    lineColorString.append("lineColor={");
-    lineColorString.append(QString::number(mLineColor.red())).append(",");
-    lineColorString.append(QString::number(mLineColor.green())).append(",");
-    lineColorString.append(QString::number(mLineColor.blue()));
-    lineColorString.append("}");
-    annotationString.append(lineColorString);
+  if (mLineColor.isDynamicSelectExpression() || mLineColor.toQString().compare(QStringLiteral("{0,0,0}")) != 0) {
+    annotationString.append(QString("lineColor=%1").arg(mLineColor.toQString()));
   }
   /* get the fill color */
-  if (mFillColor != Qt::black) {
-    QString fillColorString;
-    fillColorString.append("fillColor={");
-    fillColorString.append(QString::number(mFillColor.red())).append(",");
-    fillColorString.append(QString::number(mFillColor.green())).append(",");
-    fillColorString.append(QString::number(mFillColor.blue()));
-    fillColorString.append("}");
-    annotationString.append(fillColorString);
+  if (mFillColor.isDynamicSelectExpression() || mFillColor.toQString().compare(QStringLiteral("{0,0,0}")) != 0) {
+    annotationString.append(QString("fillColor=%1").arg(mFillColor.toQString()));
   }
   /* get the line pattern */
-  if (mLinePattern != StringHandler::LineSolid) {
-    annotationString.append(QString("pattern=").append(StringHandler::getLinePatternString(mLinePattern)));
+  if (mLinePattern.isDynamicSelectExpression() || mLinePattern.toQString().compare(QStringLiteral("LinePattern.Solid")) != 0) {
+    annotationString.append(QString("pattern=%1").arg(mLinePattern.toQString()));
   }
   /* get the fill pattern */
-  if (mFillPattern != StringHandler::FillNone) {
-    annotationString.append(QString("fillPattern=").append(StringHandler::getFillPatternString(mFillPattern)));
+  if (mFillPattern.isDynamicSelectExpression() || mFillPattern.toQString().compare(QStringLiteral("FillPattern.None")) != 0) {
+    annotationString.append(QString("fillPattern=%1").arg(mFillPattern.toQString()));
   }
   // get the thickness
-  if (mLineThickness != 0.25) {
-    annotationString.append(QString("lineThickness=").append(QString::number(mLineThickness)));
+  if (mLineThickness.isDynamicSelectExpression() || mLineThickness.toQString().compare(QStringLiteral("0.25")) != 0) {
+    annotationString.append(QString("lineThickness=%1").arg(mLineThickness.toQString()));
+  }
+  return annotationString;
+}
+
+/*!
+ * \brief FilledShape::getTextShapeAnnotation
+ * Returns the annotation values for Text shape.
+ * This function is used for Text annotation only.
+ * \return the annotation values as a list.
+ */
+QStringList FilledShape::getTextShapeAnnotation()
+{
+  QStringList annotationString;
+  /* get the text color */
+  if (mLineColor.isDynamicSelectExpression() || mLineColor.toQString().compare(QStringLiteral("{0,0,0}")) != 0) {
+    annotationString.append(QString("textColor=%1").arg(mLineColor.toQString()));
   }
   return annotationString;
 }
@@ -273,6 +284,24 @@ QStringList FilledShape::getShapeAnnotation()
  * \param pShapeAnnotation
  * \param pParent
  */
+ShapeAnnotation::ShapeAnnotation(QGraphicsItem *pParent)
+  : QGraphicsItem(pParent)
+{
+  mpGraphicsView = 0;
+  mpParentComponent = dynamic_cast<Element*>(pParent);
+  //mTransformation = 0;
+  mpReferenceShapeAnnotation = 0;
+  mIsInheritedShape = false;
+  setOldScenePosition(QPointF(0, 0));
+  mIsCornerItemClicked = false;
+  mOldAnnotation = "";
+//  if (pShapeAnnotation) {
+//    connect(pShapeAnnotation, SIGNAL(added()), this, SLOT(referenceShapeAdded()));
+//    connect(pShapeAnnotation, SIGNAL(changed()), this, SLOT(referenceShapeChanged()));
+//    connect(pShapeAnnotation, SIGNAL(deleted()), this, SLOT(referenceShapeDeleted()));
+//  }
+}
+
 ShapeAnnotation::ShapeAnnotation(ShapeAnnotation *pShapeAnnotation, QGraphicsItem *pParent)
   : QGraphicsItem(pParent)
 {
@@ -315,9 +344,9 @@ ShapeAnnotation::ShapeAnnotation(bool inheritedShape, GraphicsView *pGraphicsVie
     connect(pShapeAnnotation, SIGNAL(changed()), this, SLOT(referenceShapeChanged()));
     connect(pShapeAnnotation, SIGNAL(deleted()), this, SLOT(referenceShapeDeleted()));
   }
+  connect(mpGraphicsView, SIGNAL(updateDynamicSelect(double)), this, SLOT(updateDynamicSelect(double)));
+  connect(mpGraphicsView, SIGNAL(resetDynamicSelect()), this, SLOT(resetDynamicSelect()));
 }
-
-int ShapeAnnotation::maxTextLengthToShowOnLibraryIcon = 2;
 
 /*!
  * \brief ShapeAnnotation::setDefaults
@@ -332,20 +361,16 @@ void ShapeAnnotation::setDefaults()
   mPoints.clear();
   mGeometries.clear();
   mArrow.clear();
-  mArrow.append(StringHandler::ArrowNone);
-  mArrow.append(StringHandler::ArrowNone);
+  mArrow = QVector<StringHandler::Arrow>(2, StringHandler::ArrowNone);
   mArrowSize = 3;
   mSmooth = StringHandler::SmoothNone;
-  mExtents.clear();
-  mExtents.append(QPointF(0, 0));
-  mExtents.append(QPointF(0, 0));
+  mExtent.clear();
+  mExtent = QVector<QPointF>(2, QPointF(0, 0));
   mBorderPattern = StringHandler::BorderNone;
   mRadius = 0;
   mStartAngle = 0;
   mEndAngle = 360;
   mClosure = StringHandler::ClosureChord;
-  mOriginalTextString = "";
-  mTextString = "";
   mFontSize = 0;
   mFontName = Helper::systemFontInfo.family();
   mTextStyles.clear();
@@ -368,10 +393,7 @@ void ShapeAnnotation::setDefaults(ShapeAnnotation *pShapeAnnotation)
   mLineColor = pShapeAnnotation->mLineColor;
   mLinePattern = pShapeAnnotation->mLinePattern;
   mLineThickness = pShapeAnnotation->mLineThickness;
-  mArrow.append(StringHandler::ArrowNone);
-  mArrow.append(StringHandler::ArrowNone);
-  setStartArrow(pShapeAnnotation->getStartArrow());
-  setEndArrow(pShapeAnnotation->getEndArrow());
+  mArrow = pShapeAnnotation->getArrow();
   mArrowSize = pShapeAnnotation->mArrowSize;
   mSmooth = pShapeAnnotation->mSmooth;
   setExtents(pShapeAnnotation->getExtents());
@@ -470,8 +492,8 @@ QPainterPath ShapeAnnotation::addPathStroker(QPainterPath &path) const
   */
 QRectF ShapeAnnotation::getBoundingRect() const
 {
-  QPointF p1 = mExtents.size() > 0 ? mExtents.at(0) : QPointF(-100.0, -100.0);
-  QPointF p2 = mExtents.size() > 1 ? mExtents.at(1) : QPointF(100.0, 100.0);
+  QPointF p1 = mExtent.size() > 0 ? mExtent.at(0) : QPointF(-100.0, -100.0);
+  QPointF p2 = mExtent.size() > 1 ? mExtent.at(1) : QPointF(100.0, 100.0);
   return QRectF(p1, p2);
 }
 
@@ -514,8 +536,7 @@ void ShapeAnnotation::applyLinePattern(QPainter *painter)
    * Use non cosmetic pens for Libraries Browser and shapes inside component when thickness is greater than 4.
    */
   if (thickness > 4
-      && ((mpGraphicsView && mpGraphicsView->isRenderingLibraryPixmap())
-          || mpParentComponent)) {
+      && ((mpGraphicsView && mpGraphicsView->isRenderingLibraryPixmap()) || mpParentComponent)) {
     pen.setCosmetic(false);
   }
   // if thickness is greater than 1 pixel then use antialiasing.
@@ -577,39 +598,57 @@ void ShapeAnnotation::applyFillPattern(QPainter *painter)
 
 QList<QPointF> ShapeAnnotation::getExtentsForInheritedShapeFromIconDiagramMap(GraphicsView *pGraphicsView, ShapeAnnotation *pReferenceShapeAnnotation)
 {
-  QPointF defaultPoint1 = QPointF(pGraphicsView->mMergedCoOrdinateSystem.getLeft(), pGraphicsView->mMergedCoOrdinateSystem.getBottom());
-  QPointF defaultPoint2 = QPointF(pGraphicsView->mMergedCoOrdinateSystem.getRight(), pGraphicsView->mMergedCoOrdinateSystem.getTop());
+  ExtentAnnotation extent = pGraphicsView->mMergedCoOrdinateSystem.getExtent();
+  QPointF defaultPoint1 = QPointF(extent.at(0).x(), extent.at(0).y());
+  QPointF defaultPoint2 = QPointF(extent.at(1).x(), extent.at(1).y());
   QPointF point1 = defaultPoint1;
   QPointF point2 = defaultPoint2;
+  bool preserveAspectRatio = false;
 
-  int index = pGraphicsView->getModelWidget()->getInheritedClassesList().indexOf(pReferenceShapeAnnotation->getGraphicsView()->getModelWidget()->getLibraryTreeItem()) + 1;
-  if (index > 0) {
-    QList<QPointF> extent;
-    if (pGraphicsView->getViewType() == StringHandler::Icon) {
-      extent = pGraphicsView->getModelWidget()->getInheritedClassIconMap().value(index).mExtent;
-    } else {
-      extent = pGraphicsView->getModelWidget()->getInheritedClassDiagramMap().value(index).mExtent;
+  if (MainWindow::instance()->isNewApi()) {
+    ModelInstance::Extend *pExtend = dynamic_cast<ModelInstance::Extend*>(getExtend());
+    if (pExtend) {
+      if (pGraphicsView->getViewType() == StringHandler::Icon) {
+        extent = pExtend->getAnnotation()->getIconMap().getExtent();
+        preserveAspectRatio = pExtend->getModel()->getAnnotation()->getIconAnnotation()->mMergedCoOrdinateSystem.getPreserveAspectRatio();
+      } else {
+        extent = pExtend->getAnnotation()->getDiagramMap().getExtent();
+        preserveAspectRatio = pExtend->getModel()->getAnnotation()->getDiagramAnnotation()->mMergedCoOrdinateSystem.getPreserveAspectRatio();
+      }
     }
-    point1 = extent.size() > 0 ? extent.at(0) : defaultPoint1;
-    point2 = extent.size() > 1 ? extent.at(1) : defaultPoint2;
-    // find the width and height
-    qreal width = qFabs(point1.x() - point2.x());
-    qreal height = qFabs(point1.y() - point2.y());
-    if (width < 1 || height < 1) {
-      point1 = defaultPoint1;
-      point2 = defaultPoint2;
-    } else {
-      /* if preserveAspectRatio of the base class is true
-       * Take x if width is lesser than height otherwise take y
-       */
-      if (pReferenceShapeAnnotation->getGraphicsView() && pReferenceShapeAnnotation->getGraphicsView()->mMergedCoOrdinateSystem.getPreserveAspectRatio()) {
-        if (width < height) {
-          point1.setY(point1.x());
-          point2.setY(point2.x());
-        } else {
-          point1.setX(point1.y());
-          point2.setX(point2.y());
-        }
+  } else {
+    int index = pGraphicsView->getModelWidget()->getInheritedClassesList().indexOf(pReferenceShapeAnnotation->getGraphicsView()->getModelWidget()->getLibraryTreeItem()) + 1;
+    if (index > 0) {
+      QVector<QPointF> mapExtent(2, QPointF(0, 0));
+      if (pGraphicsView->getViewType() == StringHandler::Icon) {
+        mapExtent = pGraphicsView->getModelWidget()->getInheritedClassIconMap().value(index).mExtent;
+      } else {
+        mapExtent = pGraphicsView->getModelWidget()->getInheritedClassDiagramMap().value(index).mExtent;
+      }
+      extent = mapExtent;
+      preserveAspectRatio = pReferenceShapeAnnotation->getGraphicsView() && pReferenceShapeAnnotation->getGraphicsView()->mMergedCoOrdinateSystem.getPreserveAspectRatio();
+    }
+  }
+
+  point1 = extent.size() > 0 ? extent.at(0) : defaultPoint1;
+  point2 = extent.size() > 1 ? extent.at(1) : defaultPoint2;
+  // find the width and height
+  qreal width = qFabs(point1.x() - point2.x());
+  qreal height = qFabs(point1.y() - point2.y());
+  if (width < 1 || height < 1) {
+    point1 = defaultPoint1;
+    point2 = defaultPoint2;
+  } else {
+    /* if preserveAspectRatio of the base class is true
+     * Take x if width is lesser than height otherwise take y
+     */
+    if (preserveAspectRatio) {
+      if (width < height) {
+        point1.setY(point1.x());
+        point2.setY(point2.x());
+      } else {
+        point1.setX(point1.y());
+        point2.setX(point2.y());
       }
     }
   }
@@ -628,12 +667,11 @@ void ShapeAnnotation::applyTransformation()
   setPos(0, 0);
   setFlag(QGraphicsItem::ItemSendsGeometryChanges, state);
 
-  mTransformation.setWidth(qFabs(mExtents.at(0).x() - mExtents.at(1).x()));
-  mTransformation.setHeight(qFabs(mExtents.at(0).y() - mExtents.at(1).y()));
+  mTransformation.setWidth(qFabs(mExtent.at(0).x() - mExtent.at(1).x()));
+  mTransformation.setHeight(qFabs(mExtent.at(0).y() - mExtent.at(1).y()));
   mTransformation.setOrigin(mOrigin);
   mTransformation.setRotateAngle(mRotation);
-  mTransformation.setExtent1(mExtents.at(0));
-  mTransformation.setExtent2(mExtents.at(1));
+  mTransformation.setExtent(mExtent);
   setTransform(mTransformation.getTransformationMatrix());
 
   QPointF origin = mOrigin;
@@ -642,16 +680,21 @@ void ShapeAnnotation::applyTransformation()
   // Don't apply it also on shapes inside Element
   // if the extends have some new coordinate extents then use it to scale the shape
   LineAnnotation *pLineAnnotation = dynamic_cast<LineAnnotation*>(this);
-  GraphicsView *pGraphicsView = mpGraphicsView ? mpGraphicsView : mpReferenceShapeAnnotation->getGraphicsView();
-  if (!mpParentComponent && pGraphicsView
-      && !(pLineAnnotation && pLineAnnotation->getLineType() != LineAnnotation::ShapeType)
-      && mpReferenceShapeAnnotation && mpReferenceShapeAnnotation->getGraphicsView()) {
-    QList<QPointF> extendsCoOrdinateExtents = getExtentsForInheritedShapeFromIconDiagramMap(pGraphicsView, mpReferenceShapeAnnotation);
+  GraphicsView *pGraphicsView = 0;
+  if (mpGraphicsView) {
+    pGraphicsView = mpGraphicsView;
+  } else if (mpReferenceShapeAnnotation) {
+    pGraphicsView = mpReferenceShapeAnnotation->getGraphicsView();
+  }
 
-    qreal left = pGraphicsView->mMergedCoOrdinateSystem.getLeft();
-    qreal bottom = pGraphicsView->mMergedCoOrdinateSystem.getBottom();
-    qreal right = pGraphicsView->mMergedCoOrdinateSystem.getRight();
-    qreal top = pGraphicsView->mMergedCoOrdinateSystem.getTop();
+  if (!mpParentComponent && pGraphicsView && !(pLineAnnotation && pLineAnnotation->getLineType() != LineAnnotation::ShapeType)
+      && ((mpReferenceShapeAnnotation && mpReferenceShapeAnnotation->getGraphicsView()) || (pGraphicsView->getModelWidget()->isNewApi() && mIsInheritedShape))) {
+    QList<QPointF> extendsCoOrdinateExtents = getExtentsForInheritedShapeFromIconDiagramMap(pGraphicsView, mpReferenceShapeAnnotation);
+    ExtentAnnotation extent = pGraphicsView->mMergedCoOrdinateSystem.getExtent();
+    qreal left = extent.at(0).x();
+    qreal bottom = extent.at(0).y();
+    qreal right = extent.at(1).x();
+    qreal top = extent.at(1).y();
     // map the origin to extends CoOrdinateSystem
     origin.setX(Utilities::mapToCoOrdinateSystem(mOrigin.x(), left, right, extendsCoOrdinateExtents.at(0).x(), extendsCoOrdinateExtents.at(1).x()));
     origin.setY(Utilities::mapToCoOrdinateSystem(mOrigin.y(), bottom, top, extendsCoOrdinateExtents.at(0).y(), extendsCoOrdinateExtents.at(1).y()));
@@ -691,8 +734,8 @@ void ShapeAnnotation::drawCornerItems()
       mCornerItemsList.append(pCornerItem);
     }
   } else {
-    QPointF extent1 = QPointF(qMin(mExtents.at(0).x(), mExtents.at(1).x()), qMin(mExtents.at(0).y(), mExtents.at(1).y()));
-    QPointF extent2 = QPointF(qMax(mExtents.at(0).x(), mExtents.at(1).x()), qMax(mExtents.at(0).y(), mExtents.at(1).y()));
+    QPointF extent1 = QPointF(qMin(mExtent.at(0).x(), mExtent.at(1).x()), qMin(mExtent.at(0).y(), mExtent.at(1).y()));
+    QPointF extent2 = QPointF(qMax(mExtent.at(0).x(), mExtent.at(1).x()), qMax(mExtent.at(0).y(), mExtent.at(1).y()));
     mCornerItemsList.append(new CornerItem(extent1.x(), extent1.y(), 0, this));
     mCornerItemsList.append(new CornerItem(extent2.x(), extent2.y(), 1, this));
   }
@@ -705,7 +748,7 @@ void ShapeAnnotation::drawCornerItems()
 void ShapeAnnotation::setCornerItemsActiveOrPassive()
 {
   foreach (CornerItem *pCornerItem, mCornerItemsList) {
-    if (isSelected()) {
+    if (mVisible && isSelected()) {
       pCornerItem->setToolTip(Helper::clickAndDragToResize);
       pCornerItem->setVisible(true);
     } else {
@@ -714,7 +757,7 @@ void ShapeAnnotation::setCornerItemsActiveOrPassive()
     }
   }
   if (mpOriginItem) {
-    if (isSelected()) {
+    if (mVisible && isSelected()) {
       mpOriginItem->setActive();
     } else {
       mpOriginItem->setPassive();
@@ -734,9 +777,9 @@ void ShapeAnnotation::updateCornerItems()
       }
     }
   } else {
-    if (mExtents.size() > 1) {
-      QPointF extent1 = QPointF(qMin(mExtents.at(0).x(), mExtents.at(1).x()), qMin(mExtents.at(0).y(), mExtents.at(1).y()));
-      QPointF extent2 = QPointF(qMax(mExtents.at(0).x(), mExtents.at(1).x()), qMax(mExtents.at(0).y(), mExtents.at(1).y()));
+    if (mExtent.size() > 1) {
+      QPointF extent1 = QPointF(qMin(mExtent.at(0).x(), mExtent.at(1).x()), qMin(mExtent.at(0).y(), mExtent.at(1).y()));
+      QPointF extent2 = QPointF(qMax(mExtent.at(0).x(), mExtent.at(1).x()), qMax(mExtent.at(0).y(), mExtent.at(1).y()));
       if (mCornerItemsList.size() > 1) {
         mCornerItemsList.at(0)->setPos(QPointF(extent1.x(), extent1.y()));
         mCornerItemsList.at(1)->setPos(QPointF(extent2.x(), extent2.y()));
@@ -765,9 +808,9 @@ void ShapeAnnotation::removeCornerItems()
  */
 void ShapeAnnotation::replaceExtent(const int index, const QPointF point)
 {
-  if (mExtents.size() > 1 && index >= 0 && index <= 1) {
+  if (mExtent.size() > 1 && index >= 0 && index <= 1) {
     prepareGeometryChange();
-    mExtents.replace(index, point);
+    mExtent.replace(index, point);
   }
 }
 
@@ -779,9 +822,9 @@ void ShapeAnnotation::replaceExtent(const int index, const QPointF point)
  */
 void ShapeAnnotation::updateExtent(const int index, const QPointF point)
 {
-  if (mExtents.size() > 1 && index >= 0 && index <= 1) {
+  if (mExtent.size() > 1 && index >= 0 && index <= 1) {
     prepareGeometryChange();
-    mExtents.replace(index, point);
+    mExtent.replace(index, point);
   }
   applyTransformation();
 }
@@ -900,8 +943,8 @@ void ShapeAnnotation::applyRotation(qreal angle)
   */
 void ShapeAnnotation::adjustPointsWithOrigin()
 {
-  QList<QPointF> points;
-  foreach (QPointF point, mPoints) {
+  QVector<QPointF> points;
+  for (auto &point: mPoints) {
     points.append(point - mOrigin);
   }
   mPoints = points;
@@ -912,11 +955,11 @@ void ShapeAnnotation::adjustPointsWithOrigin()
   */
 void ShapeAnnotation::adjustExtentsWithOrigin()
 {
-  QList<QPointF> extents;
-  for (auto &extent: mExtents) {
+  QVector<QPointF> extents;
+  for (auto &extent: mExtent) {
     extents.append(extent - mOrigin);
   }
-  mExtents = extents;
+  mExtent = extents;
 }
 
 /*!
@@ -948,7 +991,7 @@ void ShapeAnnotation::updateCornerItem(int index)
     if (dynamic_cast<LineAnnotation*>(this) || dynamic_cast<PolygonAnnotation*>(this)) {
       pCornerItem->setPos(mPoints.at(index));
     } else {
-      pCornerItem->setPos(mExtents.at(index));
+      pCornerItem->setPos(mExtent.at(index));
     }
     pCornerItem->setFlag(QGraphicsItem::ItemSendsGeometryChanges, flagState);
     pCornerItem->blockSignals(signalsState);
@@ -1060,10 +1103,11 @@ void ShapeAnnotation::moveShape(const qreal dx, const qreal dy)
 void ShapeAnnotation::setShapeFlags(bool enable)
 {
   /* Only set the ItemIsMovable & ItemSendsGeometryChanges flags on shape if the class is not a system library class
+   * AND not a visualization view.
    * AND shape is not an inherited shape.
    * AND shape is not a OMS connector i.e., input/output signals of fmu.
    */
-  if (!mpGraphicsView->getModelWidget()->getLibraryTreeItem()->isSystemLibrary() && !isInheritedShape()
+  if (!mpGraphicsView->getModelWidget()->getLibraryTreeItem()->isSystemLibrary() && !mpGraphicsView->isVisualizationView() && !isInheritedShape()
       && !(mpGraphicsView->getModelWidget()->getLibraryTreeItem()->getLibraryType() == LibraryTreeItem::OMS
            && (mpGraphicsView->getModelWidget()->getLibraryTreeItem()->getOMSConnector()
                || mpGraphicsView->getModelWidget()->getLibraryTreeItem()->getOMSBusConnector()
@@ -1081,39 +1125,52 @@ void ShapeAnnotation::setShapeFlags(bool enable)
  */
 void ShapeAnnotation::updateDynamicSelect(double time)
 {
-  bool updated = false;
+  if ((mpGraphicsView && mpGraphicsView->isVisualizationView())
+      || (mpParentComponent && mpParentComponent->getGraphicsView() && mpParentComponent->getGraphicsView()->isVisualizationView())) {
+    bool updated = false;
 
-  updated |= mVisible.update(time, mpParentComponent);
-  updated |= mOrigin.update(time, mpParentComponent);
-  updated |= mRotation.update(time, mpParentComponent);
-  updated |= mLineColor.update(time, mpParentComponent);
-  updated |= mFillColor.update(time, mpParentComponent);
-  updated |= mLineThickness.update(time, mpParentComponent);
-  updated |= mArrowSize.update(time, mpParentComponent);
-  updated |= mExtents.update(time, mpParentComponent);
-  updated |= mRadius.update(time, mpParentComponent);
-  updated |= mStartAngle.update(time, mpParentComponent);
-  updated |= mEndAngle.update(time, mpParentComponent);
-  updated |= mFontSize.update(time, mpParentComponent);
+    updated |= mVisible.update(time, mpParentComponent);
+    updated |= mOrigin.update(time, mpParentComponent);
+    updated |= mRotation.update(time, mpParentComponent);
+    updated |= mLineColor.update(time, mpParentComponent);
+    updated |= mFillColor.update(time, mpParentComponent);
+    updated |= mLineThickness.update(time, mpParentComponent);
+    updated |= mArrowSize.update(time, mpParentComponent);
+    updated |= mExtent.update(time, mpParentComponent);
+    updated |= mRadius.update(time, mpParentComponent);
+    updated |= mStartAngle.update(time, mpParentComponent);
+    updated |= mEndAngle.update(time, mpParentComponent);
+    updated |= mFontSize.update(time, mpParentComponent);
+    updated |= mTextString.update(time, mpParentComponent);
 
-  // textString
-  if (mTextExpression.isCall("DynamicSelect")) {
-    mTextString = mTextExpression.arg(1).evaluate([&] (std::string name) {
-      auto vname = QString::fromStdString(name);
-
-      if (mpParentComponent && mpParentComponent->getComponentInfo()) {
-        vname = QString("%1.%2").arg(mpParentComponent->getName(), vname);
-      }
-
-      return MainWindow::instance()->getVariablesWidget()->readVariableValue(vname, time);
-    }).toQString();
-
-    updated = true;
+    if (updated) {
+      applyTransformation();
+      update();
+    }
   }
+}
 
-  if (updated) {
-    update();
-  }
+/*!
+ * \brief ShapeAnnotation::resetDynamicSelect
+ * Resets the DynamicSelect back to static.
+ */
+void ShapeAnnotation::resetDynamicSelect()
+{
+  mVisible.resetDynamicToStatic();
+  mOrigin.resetDynamicToStatic();
+  mRotation.resetDynamicToStatic();
+  mLineColor.resetDynamicToStatic();
+  mFillColor.resetDynamicToStatic();
+  mLineThickness.resetDynamicToStatic();
+  mArrowSize.resetDynamicToStatic();
+  mExtent.resetDynamicToStatic();
+  mRadius.resetDynamicToStatic();
+  mStartAngle.resetDynamicToStatic();
+  mEndAngle.resetDynamicToStatic();
+  mFontSize.resetDynamicToStatic();
+  mTextString.resetDynamicToStatic();
+
+  update();
 }
 
 /*!
@@ -1162,7 +1219,7 @@ void ShapeAnnotation::manhattanizeShape(bool addToStack)
       points.append(QPointF(points[0].x() + dx, points[0].y()));
     }
     points.removeLast();
-    QList<QPointF> oldPoints = mPoints;
+    QVector<QPointF> oldPoints = mPoints;
     clearPoints();
     for (int i = 0 ; i <= startIndex ; i++) {
       addPoint(oldPoints[i]);
@@ -1473,7 +1530,7 @@ void ShapeAnnotation::cornerItemPressed(const int index)
   mTransform = transform();
   mSceneBoundingRect = sceneBoundingRect().normalized();
   mOldOrigin = mOrigin;
-  mOldExtents = mExtents;
+  mOldExtents = mExtent;
 
   CornerItem *pClickedCornerItem = getCornerItem(index);
   int otherIndex = index == 0 ? 1 : 0;
@@ -1500,7 +1557,7 @@ void ShapeAnnotation::cornerItemReleased(const bool changed)
       if (pModelWidget->getLibraryTreeItem()->getLibraryType() == LibraryTreeItem::OMS) {
         if (pLineAnnotation) {
           pLineAnnotation->updateOMSConnection();
-          pModelWidget->createOMSimulatorUndoCommand(QString("Update OMS Connection connect(%1, %2)").arg(pLineAnnotation->getStartComponentName(), pLineAnnotation->getEndComponentName()));
+          pModelWidget->createOMSimulatorUndoCommand(QString("Update OMS Connection connect(%1, %2)").arg(pLineAnnotation->getStartElementName(), pLineAnnotation->getEndElementName()));
           pModelWidget->updateModelText();
           return;
         }
@@ -1578,15 +1635,15 @@ void ShapeAnnotation::updateCornerItemPoint(int index, QPointF point)
         mPoints.replace(index, point);
         // update previous point
         if (mGeometries.size() > index - 1 && mGeometries[index - 1] == ShapeAnnotation::HorizontalLine && mPoints.size() > index - 1) {
-          mPoints[index - 1] = QPointF(mPoints[index - 1].x(), mPoints[index - 1].y() +  dy);
+          mPoints.setPoint(index - 1, QPointF(mPoints[index - 1].x(), mPoints[index - 1].y() +  dy));
         } else if (mGeometries.size() > index - 1 && mGeometries[index - 1] == ShapeAnnotation::VerticalLine && mPoints.size() > index - 1) {
-          mPoints[index - 1] = QPointF(mPoints[index - 1].x() + dx, mPoints[index - 1].y());
+          mPoints.setPoint(index - 1, QPointF(mPoints[index - 1].x() + dx, mPoints[index - 1].y()));
         }
         // update next point
         if (mGeometries.size() > index && mGeometries[index] == ShapeAnnotation::HorizontalLine && mPoints.size() > index + 1) {
-          mPoints[index + 1] = QPointF(mPoints[index + 1].x(), mPoints[index + 1].y() +  dy);
+          mPoints.setPoint(index + 1, QPointF(mPoints[index + 1].x(), mPoints[index + 1].y() +  dy));
         } else if (mGeometries.size() > index && mGeometries[index] == ShapeAnnotation::VerticalLine && mPoints.size() > index + 1) {
-          mPoints[index + 1] = QPointF(mPoints[index + 1].x() + dx, mPoints[index + 1].y());
+          mPoints.setPoint(index + 1, QPointF(mPoints[index + 1].x() + dx, mPoints[index + 1].y()));
         }
       }
     } else {
@@ -1598,9 +1655,9 @@ void ShapeAnnotation::updateCornerItemPoint(int index, QPointF point)
     mPoints.replace(index, point);
     /* if first point */
     if (index == 0) {
-      mPoints.back() = point;
+      mPoints.setPoint(mPoints.size() - 1, point);
     } else if (index == mPoints.size() - 1) { /* if last point */
-      mPoints.first() = point;
+      mPoints.setPoint(0, point);
     }
     applyTransformation();
   } else {
@@ -1697,7 +1754,7 @@ void ShapeAnnotation::updateCornerItemPoint(int index, QPointF point)
       extent2.setY(qRound(sy * rect.bottom()));
     }
 
-    QList<QPointF> extents;
+    QVector<QPointF> extents;
     extents.append(extent1);
     extents.append(extent2);
     prepareGeometryChange();
@@ -1818,21 +1875,20 @@ QVariant ShapeAnnotation::itemChange(GraphicsItemChange change, const QVariant &
     if (isSelected()) {
       setCornerItemsActiveOrPassive();
       setCursor(Qt::SizeAllCursor);
-      /* Only allow manipulations on shapes if the class is not a system library class OR shape is not an inherited component. */
-      if (!mpGraphicsView->getModelWidget()->getLibraryTreeItem()->isSystemLibrary() && !isInheritedShape()) {
+      /* Only allow manipulations on shapes if the class is not a system library class OR not a visualization view OR shape is not an inherited component. */
+      if (!mpGraphicsView->getModelWidget()->getLibraryTreeItem()->isSystemLibrary() && !mpGraphicsView->isVisualizationView() && !isInheritedShape()) {
         if (pLineAnnotation) {
           connect(mpGraphicsView, SIGNAL(manhattanize()), this, SLOT(manhattanizeShape()), Qt::UniqueConnection);
         }
         connect(mpGraphicsView, SIGNAL(deleteSignal()), this, SLOT(deleteMe()), Qt::UniqueConnection);
         if (lineType == LineAnnotation::ShapeType) {
-          connect(mpGraphicsView, SIGNAL(mouseDuplicate()), this, SLOT(duplicate()), Qt::UniqueConnection);
+          connect(mpGraphicsView, SIGNAL(duplicate()), this, SLOT(duplicate()), Qt::UniqueConnection);
           connect(mpGraphicsView->getBringToFrontAction(), SIGNAL(triggered()), this, SLOT(bringToFront()), Qt::UniqueConnection);
           connect(mpGraphicsView->getBringForwardAction(), SIGNAL(triggered()), this, SLOT(bringForward()), Qt::UniqueConnection);
           connect(mpGraphicsView->getSendToBackAction(), SIGNAL(triggered()), this, SLOT(sendToBack()), Qt::UniqueConnection);
           connect(mpGraphicsView->getSendBackwardAction(), SIGNAL(triggered()), this, SLOT(sendBackward()), Qt::UniqueConnection);
           connect(mpGraphicsView, SIGNAL(mouseRotateClockwise()), this, SLOT(rotateClockwise()), Qt::UniqueConnection);
           connect(mpGraphicsView, SIGNAL(mouseRotateAntiClockwise()), this, SLOT(rotateAntiClockwise()), Qt::UniqueConnection);
-          connect(mpGraphicsView, SIGNAL(keyPressDuplicate()), this, SLOT(duplicate()), Qt::UniqueConnection);
           connect(mpGraphicsView, SIGNAL(keyPressRotateClockwise()), this, SLOT(rotateClockwise()), Qt::UniqueConnection);
           connect(mpGraphicsView, SIGNAL(keyPressRotateAntiClockwise()), this, SLOT(rotateAntiClockwise()), Qt::UniqueConnection);
           connect(mpGraphicsView, SIGNAL(keyPressUp()), this, SLOT(moveUp()), Qt::UniqueConnection);
@@ -1852,21 +1908,20 @@ QVariant ShapeAnnotation::itemChange(GraphicsItemChange change, const QVariant &
     } else if (!mIsCornerItemClicked) {
       setCornerItemsActiveOrPassive();
       unsetCursor();
-      /* Only allow manipulations on shapes if the class is not a system library class OR shape is not an inherited component. */
-      if (!mpGraphicsView->getModelWidget()->getLibraryTreeItem()->isSystemLibrary() && !isInheritedShape()) {
+      /* Only allow manipulations on shapes if the class is not a system library class OR not a visualization view OR shape is not an inherited component. */
+      if (!mpGraphicsView->getModelWidget()->getLibraryTreeItem()->isSystemLibrary() && !mpGraphicsView->isVisualizationView() && !isInheritedShape()) {
         if (pLineAnnotation) {
           disconnect(mpGraphicsView, SIGNAL(manhattanize()), this, SLOT(manhattanizeShape()));
         }
         disconnect(mpGraphicsView, SIGNAL(deleteSignal()), this, SLOT(deleteMe()));
         if (lineType == LineAnnotation::ShapeType) {
-          disconnect(mpGraphicsView, SIGNAL(mouseDuplicate()), this, SLOT(duplicate()));
+          disconnect(mpGraphicsView, SIGNAL(duplicate()), this, SLOT(duplicate()));
           disconnect(mpGraphicsView->getBringToFrontAction(), SIGNAL(triggered()), this, SLOT(bringToFront()));
           disconnect(mpGraphicsView->getBringForwardAction(), SIGNAL(triggered()), this, SLOT(bringForward()));
           disconnect(mpGraphicsView->getSendToBackAction(), SIGNAL(triggered()), this, SLOT(sendToBack()));
           disconnect(mpGraphicsView->getSendBackwardAction(), SIGNAL(triggered()), this, SLOT(sendBackward()));
           disconnect(mpGraphicsView, SIGNAL(mouseRotateClockwise()), this, SLOT(rotateClockwise()));
           disconnect(mpGraphicsView, SIGNAL(mouseRotateAntiClockwise()), this, SLOT(rotateAntiClockwise()));
-          disconnect(mpGraphicsView, SIGNAL(keyPressDuplicate()), this, SLOT(duplicate()));
           disconnect(mpGraphicsView, SIGNAL(keyPressRotateClockwise()), this, SLOT(rotateClockwise()));
           disconnect(mpGraphicsView, SIGNAL(keyPressRotateAntiClockwise()), this, SLOT(rotateAntiClockwise()));
           disconnect(mpGraphicsView, SIGNAL(keyPressUp()), this, SLOT(moveUp()));

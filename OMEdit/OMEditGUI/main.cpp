@@ -48,7 +48,7 @@ extern "C" {
 #include <QMessageBox>
 
 #ifdef QT_NO_DEBUG
-#ifdef WIN32
+#if defined(_WIN32)
 #include "CrashReport/backtrace.h"
 
 static char *g_output = NULL;
@@ -126,13 +126,15 @@ void signalHandler(int signalNumber)
   pCrashReportDialog->exec();
   exit(signalNumber);
 }
-#endif // #ifdef WIN32
+#endif // #if defined(_WIN32)
 #endif // #ifdef QT_NO_DEBUG
 
 void printOMEditUsage()
 {
   printf("Usage: OMEdit --Debug=true|false] [files]\n");
-  printf("    --Debug=[true|false]        Enables the debugging features like QUndoView, diffModelicaFileListings view. Default is false.\n");
+  printf("    --Debug=[true|false]            Enables the debugging features like QUndoView, diffModelicaFileListings view. Default is false.\n");
+  printf("    --NAPI=[true|false]             Enables the use of new json based api.\n");
+  printf("    --NAPIProfiling=[true|false]    Enables the profiling of new json based api.\n");
   printf("    files                       List of Modelica files(*.mo) to open.\n");
 }
 
@@ -150,7 +152,7 @@ int main(int argc, char *argv[])
   MMC_TRY_TOP()
   /* Do not use the signal handler OR exception filter if user is building a debug version. Perhaps the user wants to use gdb. */
 #ifdef QT_NO_DEBUG
-#ifdef WIN32
+#if defined(_WIN32)
   SetUnhandledExceptionFilter(exceptionFilter);
 #else
   /* Abnormal termination (abort) */

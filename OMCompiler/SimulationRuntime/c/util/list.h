@@ -48,10 +48,16 @@ extern "C" {
   struct LIST;
   typedef struct LIST LIST;
 
-  LIST *allocList(unsigned int itemSize);
+
+  typedef void*(allocListNodeDataFunc_t)(const void* data);
+  typedef void(freeListNodeDataFunc_t)(void* data);
+  typedef void(copyListNodeDataFunc_t)(void* dest, const void* src);
+
+  LIST *allocList(allocListNodeDataFunc_t* allocListNodeFunc, freeListNodeDataFunc_t* freeListNodeFunc, copyListNodeDataFunc_t* copyListNodeDataFunc);
   void freeList(LIST *list);
 
   void listPushFront(LIST *list, const void *data);
+  void listPushFrontNodeNoCopy(LIST *list, LIST_NODE *node);
   void listPushBack(LIST *list, const void *data);
   void listInsert(LIST *list, LIST_NODE* prevNode, const void *data);
 
@@ -60,19 +66,19 @@ extern "C" {
   void *listFirstData(LIST *list);
   void *listLastData(LIST *list);
 
-  void listPopFront(LIST *list);
+  LIST_NODE *listPopFrontNode(LIST *list);
+  void listRemoveFront(LIST *list);
 
   void listClear(LIST *list);
-  void freeNode(LIST_NODE *node);
+  void listClearAfterNode(LIST *list, LIST_NODE *startNode);
+  void freeNode(LIST *list, LIST_NODE *node);
 
   LIST_NODE *listFirstNode(LIST *list);
   LIST_NODE *listNextNode(LIST_NODE *node);
 
   void *listNodeData(LIST_NODE *node);
   void updateNodeData(LIST *list, LIST_NODE *node, const void *data);
-  LIST_NODE* updateNodeNext(LIST *list, LIST_NODE *node, LIST_NODE *newNext);
-  void updatelistFirst(LIST* list, LIST_NODE *node);
-  void updatelistLength(LIST* list, unsigned int newLength);
+  void printList(LIST* list, int stream, void (*printDataFunc)(void*,int,void*));
 
 #ifdef __cplusplus
 }

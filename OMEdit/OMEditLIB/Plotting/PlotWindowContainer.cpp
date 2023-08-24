@@ -81,12 +81,26 @@ QString PlotWindowContainer::getUniqueName(QString name, int number)
   newName = name + QString::number(number);
 
   foreach (QMdiSubWindow *pWindow, subWindowList()) {
-    if (pWindow->widget()->windowTitle().compare(newName) == 0) {
+    QString oldName = pWindow->widget()->windowTitle();
+    if (oldName.compare(newName) == 0) {
       newName = getUniqueName(name, ++number);
       break;
     }
   }
   return newName;
+}
+
+bool PlotWindowContainer::isUniqueName(QString name)
+{
+  bool isUniqueName = true;
+  foreach (QMdiSubWindow *pWindow, subWindowList()) {
+    QString oldName = pWindow->widget()->windowTitle();
+    if (oldName.compare(name) == 0) {
+      isUniqueName = false;
+      break;
+    }
+  }
+  return isUniqueName;
 }
 
 /*!
@@ -283,6 +297,7 @@ void PlotWindowContainer::addPlotWindow(bool maximized)
                                          pPlottingPage->getHorizontalAxisTitleFontSizeSpinBox()->value(), pPlottingPage->getHorizontalAxisNumbersFontSizeSpinBox()->value(), pPlottingPage->getFooterFontSizeSpinBox()->value(),
                                          pPlottingPage->getLegendFontSizeSpinBox()->value());
     addCloseActionsToSubWindowSystemMenu(pSubWindow);
+    addRenameTabToSubWindowSystemMenu(pSubWindow);
     pSubWindow->setWindowIcon(QIcon(":/Resources/icons/plot-window.svg"));
     pPlotWindow->show();
     if (maximized) {
@@ -316,6 +331,7 @@ void PlotWindowContainer::addParametricPlotWindow()
                                          pPlottingPage->getHorizontalAxisTitleFontSizeSpinBox()->value(), pPlottingPage->getHorizontalAxisNumbersFontSizeSpinBox()->value(), pPlottingPage->getFooterFontSizeSpinBox()->value(),
                                          pPlottingPage->getLegendFontSizeSpinBox()->value());
     addCloseActionsToSubWindowSystemMenu(pSubWindow);
+    addRenameTabToSubWindowSystemMenu(pSubWindow);
     pSubWindow->setWindowIcon(QIcon(":/Resources/icons/parametric-plot-window.svg"));
     pPlotWindow->show();
   }
@@ -347,7 +363,7 @@ void PlotWindowContainer::addArrayPlotWindow(bool maximized)
         }
     }
     pPlotWindow->setTimeUnit(unitComboBox->currentText());
-    pPlotWindow->setXLabel(QString("index"));
+    pPlotWindow->setXLabel(QString("array element index"));
     pPlotWindow->installEventFilter(this);
     QMdiSubWindow *pSubWindow = addSubWindow(pPlotWindow);
     PlottingPage *pPlottingPage = OptionsDialog::instance()->getPlottingPage();
@@ -355,6 +371,7 @@ void PlotWindowContainer::addArrayPlotWindow(bool maximized)
                                          pPlottingPage->getHorizontalAxisTitleFontSizeSpinBox()->value(), pPlottingPage->getHorizontalAxisNumbersFontSizeSpinBox()->value(), pPlottingPage->getFooterFontSizeSpinBox()->value(),
                                          pPlottingPage->getLegendFontSizeSpinBox()->value());
     addCloseActionsToSubWindowSystemMenu(pSubWindow);
+    addRenameTabToSubWindowSystemMenu(pSubWindow);
     pSubWindow->setWindowIcon(QIcon(":/Resources/icons/array-plot-window.svg"));
     pPlotWindow->show();
     if (maximized) {
@@ -392,6 +409,7 @@ PlotWindow* PlotWindowContainer::addInteractivePlotWindow(bool maximized, QStrin
                                          pPlottingPage->getLegendFontSizeSpinBox()->value());
     pPlotWindow->setSubWindow(pSubWindow);
     addCloseActionsToSubWindowSystemMenu(pSubWindow);
+    addRenameTabToSubWindowSystemMenu(pSubWindow);
     pSubWindow->setWindowIcon(QIcon(":/Resources/icons/interaction.svg"));
     pPlotWindow->show();
     if (maximized) {
@@ -434,6 +452,7 @@ void PlotWindowContainer::addArrayParametricPlotWindow()
                                          pPlottingPage->getHorizontalAxisTitleFontSizeSpinBox()->value(), pPlottingPage->getHorizontalAxisNumbersFontSizeSpinBox()->value(), pPlottingPage->getFooterFontSizeSpinBox()->value(),
                                          pPlottingPage->getLegendFontSizeSpinBox()->value());
     addCloseActionsToSubWindowSystemMenu(pSubWindow);
+    addRenameTabToSubWindowSystemMenu(pSubWindow);
     pSubWindow->setWindowIcon(QIcon(":/Resources/icons/array-parametric-plot-window.svg"));
     pPlotWindow->show();
   }
@@ -454,6 +473,7 @@ void PlotWindowContainer::addAnimationWindow(bool maximized)
   pAnimationWindow->setWindowTitle(getUniqueName("Animation : "));
   QMdiSubWindow *pSubWindow = addSubWindow(pAnimationWindow);
   addCloseActionsToSubWindowSystemMenu(pSubWindow);
+  addRenameTabToSubWindowSystemMenu(pSubWindow);
   pSubWindow->setWindowIcon(QIcon(":/Resources/icons/animation.svg"));
   pAnimationWindow->show();
   if (maximized) {
@@ -475,12 +495,13 @@ void PlotWindowContainer::addDiagramWindow(ModelWidget *pModelWidget, bool maxim
 {
   if (!mpDiagramWindow) {
     mpDiagramWindow = new DiagramWindow(this);
-    mpDiagramWindow->drawDiagram(pModelWidget ? pModelWidget : MainWindow::instance()->getModelWidgetContainer()->getCurrentModelWidget());
   }
+  mpDiagramWindow->showVisualizationDiagram(pModelWidget ? pModelWidget : MainWindow::instance()->getModelWidgetContainer()->getCurrentModelWidget());
   QMdiSubWindow *pSubWindow = getDiagramSubWindowFromMdi();
   if (!pSubWindow) {
     pSubWindow = addSubWindow(mpDiagramWindow);
     addCloseActionsToSubWindowSystemMenu(pSubWindow);
+    addRenameTabToSubWindowSystemMenu(pSubWindow);
     pSubWindow->setWindowIcon(QIcon(":/Resources/icons/modeling.png"));
   }
   mpDiagramWindow->show();
@@ -499,6 +520,31 @@ void PlotWindowContainer::removeInteractivePlotWindow()
   PlotWindow *pPlotWindow = qobject_cast<PlotWindow*>(sender());
   QString owner = pPlotWindow->getInteractiveOwner();
   MainWindow::instance()->getVariablesWidget()->getVariablesTreeModel()->removeVariableTreeItem(owner);
+}
+
+/*!
+ * \brief PlotWindowContainer::renamePlotWindow
+ * Enables the renaming of an existing plot window using right click.
+ */
+void PlotWindowContainer::renamePlotWindow()
+{
+  QAction *pAction = qobject_cast<QAction*>(sender());
+  QMdiSubWindow *pMdiSubWindow = qobject_cast<QMdiSubWindow*>(pAction->parent());
+  bool okPressed = false;
+  QString text = QInputDialog::getText(this,
+                                       tr("Name Plot Tab"),
+                                       tr("Name:"),
+                                       QLineEdit::Normal,
+                                       pMdiSubWindow->windowTitle(), &okPressed);
+  if (okPressed && !text.isEmpty()) {
+    if (isUniqueName(text)) {
+      pMdiSubWindow->widget()->setWindowTitle(text);
+    }
+    else /* Name it the users name + 1. Avoids another popup. */{
+      QString uniqueName = getUniqueName(text, 1);
+      pMdiSubWindow->widget()->setWindowTitle(uniqueName);
+    }
+  }
 }
 
 /*!
@@ -579,19 +625,21 @@ void PlotWindowContainer::exportVariables()
   for (int i = 0 ; i < timeVector.size() ; ++i) {
     QStringList data;
     // write time data
-    data << QString::number(timeVector.at(i));
+    data << StringHandler::number(timeVector.at(i));
     foreach (PlotCurve *pPlotCurve, pPlotWindow->getPlot()->getPlotCurvesList()) {
+      double value;
       if (pPlotCurve && pPlotCurve->mYAxisVector.size() > i) { // parameters have just start and stop points in the dataset
-        OMCInterface::convertUnits_res convertUnit = MainWindow::instance()->getOMCProxy()->convertUnits(pPlotCurve->getYDisplayUnit(), pPlotCurve->getYUnit());
-        if (convertUnit.unitsCompatible) {
-          data << StringHandler::number(Utilities::convertUnit(pPlotCurve->mYAxisVector.at(i), convertUnit.offset, convertUnit.scaleFactor));
-        } else {
-          data << StringHandler::number(pPlotCurve->mYAxisVector.at(i));
-        }
+        value = pPlotCurve->mYAxisVector.at(i);
       } else if (pPlotCurve && pPlotCurve->mYAxisVector.size() > 0) { // Set last value to have constant values for parameters
-        data << StringHandler::number(pPlotCurve->mYAxisVector.last());
-      } else { // otherwise set value to 0. But perhaps we should never reach there.
-        data << StringHandler::number(0);
+        value = pPlotCurve->mYAxisVector.last();
+      } else { // otherwise set value to 0.0 but perhaps we should never reach there.
+        value = 0.0;
+      }
+      OMCInterface::convertUnits_res convertUnit = MainWindow::instance()->getOMCProxy()->convertUnits(pPlotCurve->getYDisplayUnit(), pPlotCurve->getYUnit());
+      if (convertUnit.unitsCompatible) {
+        data << StringHandler::number(Utilities::convertUnit(value, convertUnit.offset, convertUnit.scaleFactor));
+      } else {
+        data << StringHandler::number(value);
       }
     }
     contents.append(data.join(",")).append("\n");
@@ -625,4 +673,17 @@ void PlotWindowContainer::updatePlotWindows(QString variable)
       }
     } // is plotWidget
   }
+}
+
+/*!
+ * \brief addRenameTabToSubWindowSystemMenu
+ * Adds the rename tab action to the sub system menu
+ */
+void PlotWindowContainer::addRenameTabToSubWindowSystemMenu(QMdiSubWindow *pMdiSubWindow)
+{
+  QAction *pRenamePlotWindowAction = new QAction(tr("Rename"), pMdiSubWindow);
+  pRenamePlotWindowAction->setStatusTip(tr("Renames the plot tab"));
+  connect(pRenamePlotWindowAction, SIGNAL(triggered()), SLOT(renamePlotWindow()));
+  QMenu *pMenu = pMdiSubWindow->systemMenu();
+  pMenu->addAction(pRenamePlotWindowAction);
 }

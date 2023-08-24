@@ -49,6 +49,34 @@ constant Integer CHAR_SPACE = 32;
 constant Integer CHAR_DASH = 45;
 constant Integer CHAR_DOT = 46;
 
+public function headline_1
+  input String title;
+  output String header;
+algorithm
+  header := repeat("#", stringLength(title) + 8) + "\n\n\t" + title + "\n\n" + repeat("#", stringLength(title) + 8) + "\n";
+end headline_1;
+
+public function headline_2
+  input String title;
+  output String header;
+algorithm
+  header := repeat("=", stringLength(title) + 4) + "\n" + title + "\n" + repeat("=", stringLength(title) + 4) + "\n";
+end headline_2;
+
+public function headline_3
+  input String title;
+  output String header;
+algorithm
+  header := title + "\n" + repeat("-", stringLength(title) + 2) + "\n";
+end headline_3;
+
+public function headline_4
+  input String title;
+  output String header;
+algorithm
+  header := title + "\n" + repeat("*", stringLength(title) + 2) + "\n";
+end headline_4;
+
 public function findChar
   "Searches for a given character in the given string, returning the index of
    the character if found. If not found returns NO_POS. The start and end
@@ -413,6 +441,18 @@ algorithm
     bom := substring(s, 1, 3);
   end if;
 end stripBOM;
+
+function stripFileExtension
+  input output String filename;
+protected
+  Integer pos;
+algorithm
+  pos := rfindChar(filename, CHAR_DOT);
+
+  if pos <> NO_POS then
+    filename := substring(filename, 1, pos-1);
+  end if;
+end stripFileExtension;
 
 annotation(__OpenModelica_Interface="util");
 end StringUtil;

@@ -1376,7 +1376,7 @@ algorithm
       then getModsForDep(dep,elems);
     case(dep,((SCode.COMPONENT(name=name1),cmod))::_)
       equation
-        name2 = AbsynUtil.printComponentRefStr(dep);
+        name2 = Dump.printComponentRefStr(dep);
         true = stringEq(name2,name1);
         cmod = DAE.MOD(SCode.NOT_FINAL(),SCode.NOT_EACH(),{DAE.NAMEMOD(name2,cmod)},NONE(), AbsynUtil.dummyInfo);
       then
@@ -4215,7 +4215,7 @@ algorithm
     ty_str := Types.unparseTypeNoAttr(inType);
     exp_str := ExpressionDump.printExpStr(inExp);
     name_str := PrefixUtil.printPrefixStrIgnoreNoPre(inPrefix) +
-      AbsynUtil.printComponentRefStr(inCref);
+      Dump.printComponentRefStr(inCref);
     Error.addSourceMessageAndFail(Error.MODIFIER_DECLARATION_TYPE_MISMATCH_ERROR,
       {name_str, ad_str, exp_str, ty_str}, inInfo);
   end try;
@@ -4502,7 +4502,7 @@ algorithm
 
     case(SCode.NAMEMOD("noDerivative",(SCode.MOD(binding = SOME(Absyn.CREF(acr)))))::subs,_,_,_,_,_,_)
     equation
-      name = AbsynUtil.printComponentRefStr(acr);
+      name = Dump.printComponentRefStr(acr);
         outconds = getDeriveCondition(subs,elemDecl,inCache,inEnv,inIH,inPrefix,info);
       varPos = setFunctionInputIndex(elemDecl,name,1);
     then
@@ -4510,7 +4510,7 @@ algorithm
 
     case(SCode.NAMEMOD("zeroDerivative",(SCode.MOD(binding =  SOME(Absyn.CREF(acr)))))::subs,_,_,_,_,_,_)
     equation
-      name = AbsynUtil.printComponentRefStr(acr);
+      name = Dump.printComponentRefStr(acr);
         outconds = getDeriveCondition(subs,elemDecl,inCache,inEnv,inIH,inPrefix,info);
       varPos = setFunctionInputIndex(elemDecl,name,1);
     then
@@ -5545,7 +5545,7 @@ algorithm
     case (_,st,l,NONE(),equalityConstraint,_)
       equation
         failure(ClassInf.META_UNIONTYPE(_) = st);
-      then DAE.T_COMPLEX(st,l,equalityConstraint);
+      then DAE.T_COMPLEX(st,l,equalityConstraint, true);
 
     // extending
     case (_,st,l,SOME(bc),equalityConstraint,_)
@@ -5646,7 +5646,7 @@ algorithm
 
     // not extending basic type!
     case (_,st,l,NONE(),_)
-      then DAE.T_COMPLEX(st,l,NONE()); // adrpo: TODO! check equalityConstraint!
+      then DAE.T_COMPLEX(st,l,NONE(), true); // adrpo: TODO! check equalityConstraint!
 
     case (_,st,l,SOME(bc),_)
       then DAE.T_SUBTYPE_BASIC(st,l,bc,NONE());
@@ -5841,7 +5841,7 @@ algorithm
     eq
     for eq
     guard matchcontinue eq
-    case SCode.EQUATION(SCode.EQ_CONNECT(crefLeft=crefLeft, crefRight=crefRight))
+    case SCode.EQ_CONNECT(crefLeft=crefLeft, crefRight=crefRight)
     algorithm
       (_, ty1, _) := Lookup.lookupConnectorVar(env, ComponentReference.toExpCref(crefLeft));
       // type of left var is an expandable connector!
@@ -6998,7 +6998,7 @@ algorithm
     else
       equation
         /* Doesn't work anyway right away
-        crefStr = AbsynUtil.printComponentRefStr(cref);
+        crefStr = Dump.printComponentRefStr(cref);
         varStr = SCodeDump.variabilityString(variability);
         Error.addMessage(Error.CIRCULAR_PARAM,{crefStr,varStr});*/
       then fail();
@@ -7863,14 +7863,14 @@ algorithm
     case (DAE.STMT_FOR(iter=iter,range=exp,statementLst=stmts,source=source),_,(_,_,unbound))
       equation
         info = ElementSource.getElementSourceFileInfo(source);
-        unbound = List.filter1OnTrue(unbound,Util.stringNotEqual,iter) "TODO: This is not needed if all references are tagged CREF_ITER";
+        unbound = List.filter1OnTrue(unbound,Util.stringNotEqual,iter);
         (_,(unbound,_)) = Expression.traverseExpTopDown(exp,findUnboundVariableUse,(unbound,info));
         ((_,b,unbound)) = List.fold1(stmts, checkFunctionDefUseStmt, true, (false,false,unbound));
       then ((b,b,unbound));
     case (DAE.STMT_PARFOR(iter=iter,range=exp,statementLst=stmts,source=source),_,(_,_,unbound))
       equation
         info = ElementSource.getElementSourceFileInfo(source);
-        unbound = List.filter1OnTrue(unbound,Util.stringNotEqual,iter) "TODO: This is not needed if all references are tagged CREF_ITER";
+        unbound = List.filter1OnTrue(unbound,Util.stringNotEqual,iter);
         (_,(unbound,_)) = Expression.traverseExpTopDown(exp,findUnboundVariableUse,(unbound,info));
         ((_,b,unbound)) = List.fold1(stmts, checkFunctionDefUseStmt, true, (false,false,unbound));
       then ((b,b,unbound));
@@ -8237,7 +8237,7 @@ algorithm
   local
     list<Absyn.Ident> fieldNames1;
     Absyn.Exp lhs_exp, rhs_exp;
-    case SCode.EQUATION(SCode.EQ_PDE(expLeft = lhs_exp, expRight = rhs_exp))
+    case SCode.EQ_PDE(expLeft = lhs_exp, expRight = rhs_exp)
       /*,domain = domainCr as Absyn.CREF_IDENT(), comment = comment, info = info))*/
     algorithm
       (_,fieldNames1) := AbsynUtil.traverseExpTopDown(lhs_exp, fieldInPderExp, inFieldNames);
@@ -8571,25 +8571,25 @@ algorithm
         list<Absyn.Subscript> subscripts;
 
       //PDE with domain specified, allow for field variables:
-      case SCode.EQUATION(SCode.EQ_PDE(expLeft = lhs_exp, expRight = rhs_exp,
-                  domain = domainCr as Absyn.CREF_IDENT(), comment = comment, info = info))
+      case SCode.EQ_PDE(expLeft = lhs_exp, expRight = rhs_exp,
+                  domain = domainCr as Absyn.CREF_IDENT(), comment = comment, info = info)
         equation
           (N,fieldLst) = getDomNFields(inDomFieldLst,domainCr,info);
         then creatFieldEqs(lhs_exp, rhs_exp, domainCr, N, fieldLst, comment, info);
 
       //same as previous but with ".interior"
-      case SCode.EQUATION(SCode.EQ_PDE(expLeft = lhs_exp, expRight = rhs_exp,
+      case SCode.EQ_PDE(expLeft = lhs_exp, expRight = rhs_exp,
                   domain = domainCr as Absyn.CREF_QUAL(name, subscripts, Absyn.CREF_IDENT(name="interior")),
-                  comment = comment, info = info))
+                  comment = comment, info = info)
         equation
           domainCr1 = Absyn.CREF_IDENT(name, subscripts);
           (N,fieldLst) = getDomNFields(inDomFieldLst,domainCr1,info);
         then creatFieldEqs(lhs_exp, rhs_exp, domainCr, N, fieldLst, comment, info);
 
       //left boundary condition or extrapolation
-      case SCode.EQUATION(SCode.EQ_PDE(expLeft = lhs_exp, expRight = rhs_exp,
+      case SCode.EQ_PDE(expLeft = lhs_exp, expRight = rhs_exp,
                   domain = Absyn.CREF_QUAL(name, subscripts, Absyn.CREF_IDENT(name="left")),
-                  comment = comment, info = info))
+                  comment = comment, info = info)
         equation
           domainCr1 = Absyn.CREF_IDENT(name, subscripts);
           (N,fieldLst) = getDomNFields(inDomFieldLst,domainCr1,info);
@@ -8599,9 +8599,9 @@ algorithm
           {newEQFun(1, lhs_exp, rhs_exp, domainCr1, N, true, fieldLst, comment, info)};
 
       //right boundary condition or extrapolation
-      case SCode.EQUATION(SCode.EQ_PDE(expLeft = lhs_exp, expRight = rhs_exp,
+      case SCode.EQ_PDE(expLeft = lhs_exp, expRight = rhs_exp,
                   domain = Absyn.CREF_QUAL(name, subscripts, Absyn.CREF_IDENT(name="right")),
-                  comment = comment, info = info))
+                  comment = comment, info = info)
         equation
           domainCr1 = Absyn.CREF_IDENT(name, subscripts);
           (N,fieldLst) = getDomNFields(inDomFieldLst,domainCr1,info);
@@ -8610,7 +8610,7 @@ algorithm
         then
           {newEQFun(N, lhs_exp, rhs_exp, domainCr1, N, true, fieldLst, comment, info)};
       //Unhandled pde
-      case SCode.EQUATION(SCode.EQ_PDE())
+      case SCode.EQ_PDE()
         equation
           print("Unhandled type of EQ_PDE in discretizePDE\n");
           fail();
@@ -8745,7 +8745,7 @@ algorithm
       i2 := N - 1;
       i3 := N - 2;
     end if;
-    outEQ := SCode.EQUATION(SCode.EQ_EQUALS(Absyn.CREF(Absyn.CREF_IDENT(name, Absyn.SUBSCRIPT(Absyn.INTEGER(i1))::subscripts)),Absyn.BINARY(
+    outEQ := SCode.EQ_EQUALS(Absyn.CREF(Absyn.CREF_IDENT(name, Absyn.SUBSCRIPT(Absyn.INTEGER(i1))::subscripts)),Absyn.BINARY(
                Absyn.BINARY(
                  Absyn.INTEGER(2),
                  Absyn.MUL(),
@@ -8753,7 +8753,7 @@ algorithm
                ),
                Absyn.SUB(),
                Absyn.CREF(Absyn.CREF_IDENT(name, Absyn.SUBSCRIPT(Absyn.INTEGER(i3))::subscripts))
-             ), comment, info));
+             ), comment, info);
   else
    fail();
   end if;
@@ -8814,7 +8814,7 @@ protected function newEQFun
 algorithm
   (outLhs_exp, _) := AbsynUtil.traverseExpTopDown(inLhs_exp,discretizeTraverseFun,(i,fieldLst,domainCr,info,false,N,isBC));
   (outRhs_exp, _) := AbsynUtil.traverseExpTopDown(inRhs_exp,discretizeTraverseFun,(i,fieldLst,domainCr,info,false,N,isBC));
-  outEQ := SCode.EQUATION(SCode.EQ_EQUALS(outLhs_exp, outRhs_exp, comment, info));
+  outEQ := SCode.EQ_EQUALS(outLhs_exp, outRhs_exp, comment, info);
 end newEQFun;
 
 protected function discretizeTraverseFun

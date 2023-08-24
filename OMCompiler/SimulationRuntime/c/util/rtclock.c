@@ -150,7 +150,7 @@ double rt_total(int ix) {
 static enum omc_rt_clock_t selectedClock = OMC_CLOCK_REALTIME;
 
 #if !defined(_MSC_VER)
-inline long long RDTSC() {
+static long long RDTSC() {
    register long long TSC asm("eax");
    asm volatile (".byte 15, 49" : : : "eax", "edx");
    return TSC;
@@ -159,7 +159,7 @@ inline long long RDTSC() {
 //    return (unsigned long long)lo | ((unsigned long long)hi << 32);
 }
 #else
-long long RDTSC() {
+static long RDTSC() {
 //  unsigned int ui;
 //  return __rdtscp(&ui);
    return __rdtsc();
@@ -431,7 +431,7 @@ int64_t rt_ext_tp_sync_nanosec(rtclock_t* tick_tp, uint64_t nsec)
 static clockid_t omc_clock = OMC_CLOCK_MONOTONIC;
 
 int rt_set_clock(enum omc_rt_clock_t newClock) {
-#if defined(__linux__)
+#if defined(__linux__) || defined(__FreeBSD__)
   omc_clock = newClock == OMC_CLOCK_REALTIME ? OMC_CLOCK_MONOTONIC : CLOCK_PROCESS_CPUTIME_ID;
 #else
   omc_clock = OMC_CLOCK_MONOTONIC;

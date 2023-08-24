@@ -34,12 +34,23 @@ encapsulated uniontype NFStatement
   import Expression = NFExpression;
   import NFInstNode.InstNode;
   import DAE;
+  import ComponentRef = NFComponentRef;
 
 protected
   import Statement = NFStatement;
   import ElementSource;
+  import FlatModelicaUtil = NFFlatModelicaUtil;
   import Util;
   import IOStream;
+
+public
+  uniontype ForType
+    record NORMAL end NORMAL;
+
+    record PARALLEL
+      list<tuple<ComponentRef, SourceInfo>> vars;
+    end PARALLEL;
+  end ForType;
 
 public
   record ASSIGNMENT
@@ -59,6 +70,7 @@ public
     InstNode iterator;
     Option<Expression> range;
     list<Statement> body "The body of the for loop.";
+    ForType forType;
     DAE.ElementSource source;
   end FOR;
 
@@ -85,6 +97,12 @@ public
     Expression message "The message to display if the terminate triggers.";
     DAE.ElementSource source;
   end TERMINATE;
+
+  record REINIT
+    Expression cref;
+    Expression reinitExp;
+    DAE.ElementSource source;
+  end REINIT;
 
   record NORETCALL
     Expression exp;
@@ -121,6 +139,16 @@ public
     annotation(__OpenModelica_EarlyInline=true);
   end makeAssignment;
 
+  function isAssignment
+    input Statement stmt;
+    output Boolean res;
+  algorithm
+    res := match stmt
+      case ASSIGNMENT() then true;
+      else false;
+    end match;
+  end isAssignment;
+
   function makeIf
     input list<tuple<Expression, list<Statement>>> branches;
     input DAE.ElementSource src;
@@ -142,6 +170,7 @@ public
       case WHEN() then stmt.source;
       case ASSERT() then stmt.source;
       case TERMINATE() then stmt.source;
+      case REINIT() then stmt.source;
       case NORETCALL() then stmt.source;
       case WHILE() then stmt.source;
       case RETURN() then stmt.source;
@@ -149,6 +178,26 @@ public
       case FAILURE() then stmt.source;
     end match;
   end source;
+
+  function setSource
+    input DAE.ElementSource source;
+    input output Statement stmt;
+  algorithm
+    () := match stmt
+      case ASSIGNMENT()          algorithm stmt.source := source; then ();
+      case FUNCTION_ARRAY_INIT() algorithm stmt.source := source; then ();
+      case FOR()                 algorithm stmt.source := source; then ();
+      case IF()                  algorithm stmt.source := source; then ();
+      case WHEN()                algorithm stmt.source := source; then ();
+      case ASSERT()              algorithm stmt.source := source; then ();
+      case TERMINATE()           algorithm stmt.source := source; then ();
+      case NORETCALL()           algorithm stmt.source := source; then ();
+      case WHILE()               algorithm stmt.source := source; then ();
+      case RETURN()              algorithm stmt.source := source; then ();
+      case BREAK()               algorithm stmt.source := source; then ();
+      case FAILURE()             algorithm stmt.source := source; then ();
+    end match;
+  end setSource;
 
   function info
     input Statement stmt;
@@ -257,6 +306,59 @@ public
     stmt := func(stmt);
   end map;
 
+  function fold<ArgT>
+    input Statement stmt;
+    input MapFn func;
+    input output ArgT arg;
+
+    partial function MapFn
+      input Statement stmt;
+      input output ArgT arg;
+    end MapFn;
+  algorithm
+    () := match stmt
+      case FOR()
+        algorithm
+          for s in stmt.body loop
+            arg := fold(s, func, arg);
+          end for;
+        then
+          ();
+
+      case IF()
+        algorithm
+          for b in stmt.branches loop
+            for s in Util.tuple22(b) loop
+              arg := fold(s, func, arg);
+            end for;
+          end for;
+        then
+          ();
+
+      case WHEN()
+        algorithm
+          for b in stmt.branches loop
+            for s in Util.tuple22(b) loop
+              arg := fold(s, func, arg);
+            end for;
+          end for;
+        then
+          ();
+
+      case WHILE()
+        algorithm
+          for s in stmt.body loop
+            arg := fold(s, func, arg);
+          end for;
+        then
+          ();
+
+      else ();
+    end match;
+
+    arg := func(stmt, arg);
+  end fold;
+
   function applyExpList
     input list<Statement> stmt;
     input FoldFunc func;
@@ -325,6 +427,13 @@ public
       case Statement.TERMINATE()
         algorithm
           func(stmt.message);
+        then
+          ();
+
+      case Statement.REINIT()
+        algorithm
+          func(stmt.cref);
+          func(stmt.reinitExp);
         then
           ();
 
@@ -412,6 +521,14 @@ public
         then
           if referenceEq(e1, stmt.message) then stmt else TERMINATE(e1, stmt.source);
 
+      case REINIT()
+        algorithm
+          e1 := func(stmt.cref);
+          e2 := func(stmt.reinitExp);
+        then
+          if referenceEq(e1, stmt.cref) and referenceEq(e2, stmt.reinitExp)
+            then stmt else REINIT(e1, e2, stmt.source);
+
       case NORETCALL()
         algorithm
           e1 := func(stmt.exp);
@@ -424,6 +541,82 @@ public
       else stmt;
     end match;
   end mapExp;
+
+  function mapExpShallow
+    input output Statement stmt;
+    input MapFunc func;
+
+    partial function MapFunc
+      input output Expression exp;
+    end MapFunc;
+  algorithm
+    stmt := match stmt
+      local
+        Expression e1, e2, e3;
+
+      case ASSIGNMENT()
+        algorithm
+          e1 := func(stmt.lhs);
+          e2 := func(stmt.rhs);
+        then
+          if referenceEq(e1, stmt.lhs) and referenceEq(e2, stmt.rhs) then
+            stmt else ASSIGNMENT(e1, e2, stmt.ty, stmt.source);
+
+      case FOR()
+        algorithm
+          stmt.range := Util.applyOption(stmt.range, func);
+        then
+          stmt;
+
+      case IF()
+        algorithm
+          stmt.branches := list(
+            (func(Util.tuple21(b)), Util.tuple22(b)) for b in stmt.branches);
+        then
+          stmt;
+
+      case WHEN()
+        algorithm
+          stmt.branches := list(
+            (func(Util.tuple21(b)), Util.tuple22(b)) for b in stmt.branches);
+        then
+          stmt;
+
+      case ASSERT()
+        algorithm
+          e1 := func(stmt.condition);
+          e2 := func(stmt.message);
+          e3 := func(stmt.level);
+        then
+          if referenceEq(e1, stmt.condition) and referenceEq(e2, stmt.message) and
+            referenceEq(e3, stmt.level) then stmt else ASSERT(e1, e2, e3, stmt.source);
+
+      case TERMINATE()
+        algorithm
+          e1 := func(stmt.message);
+        then
+          if referenceEq(e1, stmt.message) then stmt else TERMINATE(e1, stmt.source);
+
+      case REINIT()
+        algorithm
+          e1 := func(stmt.cref);
+          e2 := func(stmt.reinitExp);
+        then
+          if referenceEq(e1, stmt.cref) and referenceEq(e2, stmt.reinitExp) then
+            stmt else REINIT(e1, e2, stmt.source);
+
+      case NORETCALL()
+        algorithm
+          e1 := func(stmt.exp);
+        then
+          if referenceEq(e1, stmt.exp) then stmt else NORETCALL(e1, stmt.source);
+
+      case WHILE()
+        then WHILE(func(stmt.condition), stmt.body, stmt.source);
+
+      else stmt;
+    end match;
+  end mapExpShallow;
 
   function foldExpList<ArgT>
     input list<Statement> stmt;
@@ -500,6 +693,13 @@ public
         then
           ();
 
+      case Statement.REINIT()
+        algorithm
+          arg := func(stmt.cref, arg);
+          arg := func(stmt.reinitExp, arg);
+        then
+          ();
+
       case Statement.NORETCALL()
         algorithm
           arg := func(stmt.exp, arg);
@@ -516,6 +716,15 @@ public
       else ();
     end match;
   end foldExp;
+
+  function replaceIteratorList
+    input output list<Statement> stmtl;
+    input InstNode iterator;
+    input Expression value;
+  algorithm
+    stmtl := mapExpList(stmtl,
+      function Expression.replaceIterator(iterator = iterator, iteratorValue = value));
+  end replaceIteratorList;
 
   function toString
     input Statement stmt;
@@ -635,6 +844,16 @@ public
         algorithm
           s := IOStream.append(s, "terminate(");
           s := IOStream.append(s, Expression.toString(stmt.message));
+          s := IOStream.append(s, ")");
+        then
+          s;
+
+      case REINIT()
+        algorithm
+          s := IOStream.append(s, "reinit(");
+          s := IOStream.append(s, Expression.toString(stmt.cref));
+          s := IOStream.append(s, ", ");
+          s := IOStream.append(s, Expression.toString(stmt.reinitExp));
           s := IOStream.append(s, ")");
         then
           s;
@@ -782,6 +1001,16 @@ public
         then
           s;
 
+      case REINIT()
+        algorithm
+          s := IOStream.append(s, "reinit(");
+          s := IOStream.append(s, Expression.toFlatString(stmt.cref));
+          s := IOStream.append(s, ", ");
+          s := IOStream.append(s, Expression.toFlatString(stmt.reinitExp));
+          s := IOStream.append(s, ")");
+        then
+          s;
+
       case NORETCALL()
         then IOStream.append(s, Expression.toFlatString(stmt.exp));
 
@@ -801,6 +1030,7 @@ public
       else IOStream.append(s, "#UNKNOWN STATEMENT#");
     end match;
 
+    s := FlatModelicaUtil.appendElementSourceComment(source(stmt), s);
   end toFlatStream;
 
   function toFlatStreamList

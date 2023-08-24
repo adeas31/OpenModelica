@@ -278,8 +278,7 @@ SimulationOutputWidget::SimulationOutputWidget(SimulationOptions simulationOptio
   mGeneratedFilesList << "%1.makefile";
   // cpp-runtime generated files
   if (simulationOptions.getTargetLanguage().compare("Cpp") == 0) {
-    mGeneratedFilesList << "%1.bat"
-                        << "OMCpp%1.cpp"
+    mGeneratedFilesList << "OMCpp%1.cpp"
                         << "OMCpp%1.h"
                         << "OMCpp%1.exp"
                         << "OMCpp%1.lib"
@@ -406,6 +405,9 @@ SimulationOutputWidget::SimulationOutputWidget(SimulationOptions simulationOptio
   mpCompilationProcess = 0;
   setCompilationProcessKilled(false);
   mIsCompilationProcessRunning = false;
+  mpPostCompilationProcess = 0;
+  setPostCompilationProcessKilled(false);
+  mIsPostCompilationProcessRunning = false;
   mpSimulationProcess = 0;
   setSimulationProcessKilled(false);
   mIsSimulationProcessRunning = false;
@@ -426,6 +428,11 @@ SimulationOutputWidget::~SimulationOutputWidget()
   if (mpCompilationProcess && isCompilationProcessRunning()) {
     mpCompilationProcess->kill();
     mpCompilationProcess->deleteLater();
+  }
+  // post compilation process
+  if (mpPostCompilationProcess && isPostCompilationProcessRunning()) {
+    mpPostCompilationProcess->kill();
+    mpPostCompilationProcess->deleteLater();
   }
   // simulation process
   if (mpSimulationProcess && isSimulationProcessRunning()) {
@@ -489,13 +496,13 @@ void SimulationOutputWidget::writeSimulationMessage(SimulationMessage *pSimulati
   mpSimulationOutputTextBrowser->setTextCursor(textCursor);
   /* set the text color */
   QTextCharFormat charFormat = mpSimulationOutputTextBrowser->currentCharFormat();
-  charFormat.setForeground(StringHandler::getSimulationMessageTypeColor(pSimulationMessage->mType));
+  charFormat.setForeground(OptionsDialog::instance()->getMessagesPage()->getColor(pSimulationMessage->mType));
   mpSimulationOutputTextBrowser->setCurrentCharFormat(charFormat);
   /* append the output */
   /* write the error message */
   if (pSimulationMessage->mText.compare("Reached display limit") == 0) {
-      QString simulationLogFilePath = QString("%1/%2.log").arg(mSimulationOptions.getWorkingDirectory()).arg(mSimulationOptions.getOutputFileName());
-      mpSimulationOutputTextBrowser->insertHtml(QString("Reached display limit. To read the full log open the file <a href=\"file:///%1\">%1</a>\n").arg(simulationLogFilePath));
+    QString simulationLogFilePath = QString("%1/%2.log").arg(mSimulationOptions.getWorkingDirectory()).arg(mSimulationOptions.getOutputFileName());
+    mpSimulationOutputTextBrowser->insertHtml(QString("Reached display limit. To read the full log open the file <a href=\"file:///%1\">%1</a>\n").arg(simulationLogFilePath));
   } else {
     mpSimulationOutputTextBrowser->insertPlainText(text);
   }
@@ -547,7 +554,7 @@ void SimulationOutputWidget::compileModel()
     numProcs = QString::number(mSimulationOptions.getNumberOfProcessors());
   }
   QStringList args;
-#ifdef WIN32
+#if defined(_WIN32)
   if (OptionsDialog::instance()->getSimulationPage()->getUseStaticLinkingCheckBox()->isChecked()) {
     linkType = "static";
   }
@@ -572,6 +579,159 @@ void SimulationOutputWidget::compileModel()
   writeCompilationOutput(QString("%1 %2\n").arg("make").arg(args.join(" ")), Qt::blue);
   mpCompilationProcess->start("make", args);
 #endif
+}
+
+
+/*!
+ * \brief SimulationOutputWidget::runPostCompilation
+ * Runs the post compilation command after the compilation of the model.
+ */
+void SimulationOutputWidget::runPostCompilation()
+{
+  const QString postCompilationCommand = OptionsDialog::instance()->getSimulationPage()->getPostCompilationCommand();
+  if (postCompilationCommand.size())
+  {
+    mpPostCompilationProcess = new QProcess;
+    mpPostCompilationProcess->setWorkingDirectory(mSimulationOptions.getWorkingDirectory());
+    connect(mpPostCompilationProcess, SIGNAL(started()), SLOT(postCompilationProcessStarted()));
+    connect(mpPostCompilationProcess, SIGNAL(readyReadStandardOutput()), SLOT(readPostCompilationStandardOutput()));
+    connect(mpPostCompilationProcess, SIGNAL(readyReadStandardError()), SLOT(readPostCompilationStandardError()));
+  #if (QT_VERSION >= QT_VERSION_CHECK(5, 6, 0))
+    connect(mpPostCompilationProcess, SIGNAL(errorOccurred(QProcess::ProcessError)), SLOT(postCompilationProcessError(QProcess::ProcessError)));
+  #else
+    connect(mpPostCompilationProcess, SIGNAL(error(QProcess::ProcessError)), SLOT(postCompilationProcessError(QProcess::ProcessError)));
+  #endif
+    connect(mpPostCompilationProcess, SIGNAL(finished(int, QProcess::ExitStatus)), SLOT(postCompilationProcessFinished(int, QProcess::ExitStatus)));
+    writeCompilationOutput(QString("%1\n").arg(postCompilationCommand), Qt::blue);
+  #if (QT_VERSION >= QT_VERSION_CHECK(5, 15, 0))
+    QStringList args(QProcess::splitCommand(postCompilationCommand));
+    const QString program(args.takeFirst());
+    mpPostCompilationProcess->start(program, args);
+  #else
+    mpPostCompilationProcess->start(postCompilationCommand);
+  #endif
+  }
+  else
+  {
+    // no post-compilation step, run directly the simulation
+    if (!mSimulationOptions.getBuildOnly() && !mSimulationOptions.getLaunchAlgorithmicDebugger()) {
+      runSimulationExecutable();
+    }
+  }
+}
+
+/*!
+ * \brief SimulationOutputWidget::postCompilationProcessStarted
+* Slot activated when mpPostCompilationProcess started signal is raised.\n
+ * Updates the progress label, bar and button controls.
+ */
+void SimulationOutputWidget::postCompilationProcessStarted()
+{
+  mIsPostCompilationProcessRunning = true;
+  mpProgressLabel->setText(tr("Post compiling %1.").arg(mSimulationOptions.getClassName()));
+  mpProgressBar->setRange(0, 0);
+  mpProgressBar->setTextVisible(false);
+  mpCancelButton->setText(tr("Cancel Compilation"));
+  mpCancelButton->setEnabled(true);
+}
+
+/*!
+ * \brief SimulationOutputWidget::readPostCompilationStandardOutput
+ * Slot activated when mpPostCompilationProcess readyReadStandardOutput signal is raised.\n
+ */
+void SimulationOutputWidget::readPostCompilationStandardOutput()
+{
+  writeCompilationOutput(QString(mpPostCompilationProcess->readAllStandardOutput()), Qt::black);
+}
+
+/*!
+ * \brief SimulationOutputWidget::readPostCompilationStandardError
+ * Slot activated when mpPostCompilationProcess readyReadStandardError signal is raised.\n
+ */
+void SimulationOutputWidget::readPostCompilationStandardError()
+{
+  writeCompilationOutput(QString(mpPostCompilationProcess->readAllStandardError()), Qt::red);
+}
+
+/*!
+ * \brief SimulationOutputWidget::postCompilationProcessError
+ * Slot activated when mpPostCompilationProcess errorOccurred signal is raised.\n
+ * \param error
+ */
+void SimulationOutputWidget::postCompilationProcessError(QProcess::ProcessError error)
+{
+  Q_UNUSED(error);
+  mIsPostCompilationProcessRunning = false;
+  /* this signal is raised when we kill the compilation process forcefully. */
+  if (isPostCompilationProcessKilled()) {
+    return;
+  }
+  writeCompilationOutput(mpPostCompilationProcess->errorString(), Qt::red);
+}
+
+/*!
+ * \brief SimulationOutputWidget::postCompilationProcessFinished
+ * Slot activated when mpPostCompilationProcess finished signal is raised.\n
+ * If the mpPostCompilationProcess finished normally then run the simulation executable.\n
+ * \param exitCode
+ * \param exitStatus
+ */
+void SimulationOutputWidget::postCompilationProcessFinished(int exitCode, QProcess::ExitStatus exitStatus)
+{
+  mIsPostCompilationProcessRunning = false;
+  QString exitCodeStr = tr("Post compilation process failed. Exited with code %1.").arg(Utilities::formatExitCode(exitCode));
+  if (exitStatus == QProcess::NormalExit && exitCode == 0) {
+    writeCompilationOutput(tr("Post compilation process finished successfully.\n"), Qt::blue);
+    postCompilationProcessFinishedHelper(exitCode, exitStatus);
+    // if not build only and launch the algorithmic debugger is false then run the simulation process.
+    if (!mSimulationOptions.getBuildOnly() && !mSimulationOptions.getLaunchAlgorithmicDebugger()) {
+      runSimulationExecutable();
+    }
+  } else if (mpCompilationProcess->error() == QProcess::UnknownError) {
+    writeCompilationOutput(exitCodeStr, Qt::red);
+    postCompilationProcessFinishedHelper(exitCode, exitStatus);
+  } else {
+    writeCompilationOutput(mpCompilationProcess->errorString() + "\n" + exitCodeStr, Qt::red);
+    postCompilationProcessFinishedHelper(exitCode, exitStatus);
+  }
+}
+
+void SimulationOutputWidget::postCompilationProcessFinishedHelper(int /*exitCode*/, QProcess::ExitStatus /*exitStatus*/)
+{
+  mpProgressLabel->setText(tr("Post compilation of %1 is finished.").arg(mSimulationOptions.getClassName()));
+  mpProgressBar->setRange(0, 1);
+  mpProgressBar->setValue(1);
+  mpCancelButton->setEnabled(false);
+}
+
+/*!
+ * \brief getPathsFromBatFile
+ * Parses the fileName.bat file to get the necessary paths.
+ * Returns "" if it fails to parse the file as expected.
+ */
+QString SimulationOutputWidget::getPathsFromBatFile(QString fileName) {
+
+  QFile batFile(fileName);
+  batFile.open(QIODevice::ReadOnly | QIODevice::Text);
+
+  QString line;
+  // first line is supposed to be '@echo off'
+  line = batFile.readLine();
+  // Second line is where the PATH is set. We want that.
+  line = batFile.readLine();
+
+  if (!line.toLower().startsWith("set path=")) {
+    QString warnMessage = "Failed to read the neccesary PATH values from '" + fileName + "'\n"
+                          + "If simulation fails please check that you have the bat file and it is formatted correctly\n";
+    writeSimulationOutput(warnMessage, StringHandler::Error, true);
+    line = "";
+  } else {
+    // Strip the 'set PATH='
+    line.remove(0, 9);
+  }
+  batFile.close();
+
+  return line;
 }
 
 /*!
@@ -601,11 +761,16 @@ void SimulationOutputWidget::runSimulationExecutable()
   QString fileName = QString(mSimulationOptions.getWorkingDirectory()).append("/").append(mSimulationOptions.getOutputFileName());
   fileName = fileName.replace("//", "/");
   // run the simulation executable to create the result file
-#ifdef WIN32
+#if defined(_WIN32)
+  QProcessEnvironment processEnvironment = StringHandler::simulationProcessEnvironment();
+
+  QString paths = getPathsFromBatFile(fileName + ".bat");
+
   fileName = fileName.append(".exe");
   QFileInfo fileInfo(mSimulationOptions.getFileName());
-  QProcessEnvironment processEnvironment = StringHandler::simulationProcessEnvironment();
-  processEnvironment.insert("PATH", fileInfo.absoluteDir().absolutePath() + ";" + processEnvironment.value("PATH"));
+  paths = fileInfo.absoluteDir().absolutePath() + ";" + paths;
+
+  processEnvironment.insert("PATH", paths + ";" + processEnvironment.value("PATH"));
   mpSimulationProcess->setProcessEnvironment(processEnvironment);
 #endif
   // make the output tab enabled and current
@@ -635,10 +800,11 @@ void SimulationOutputWidget::compilationProcessFinishedHelper(int exitCode, QPro
   mpProgressBar->setValue(1);
   mpCancelButton->setEnabled(false);
   if (exitStatus == QProcess::NormalExit && exitCode == 0) {
+    bool profiling = mSimulationOptions.getProfiling().compare(QStringLiteral("none")) != 0;
     if (mSimulationOptions.getBuildOnly() &&
         (OptionsDialog::instance()->getDebuggerPage()->getAlwaysShowTransformationsCheckBox()->isChecked() ||
-         mSimulationOptions.getLaunchTransformationalDebugger() || mSimulationOptions.getProfiling() != "none")) {
-      MainWindow::instance()->showTransformationsWidget(mSimulationOptions.getWorkingDirectory() + "/" + mSimulationOptions.getOutputFileName() + "_info.json");
+         mSimulationOptions.getLaunchTransformationalDebugger() || profiling)) {
+      MainWindow::instance()->showTransformationsWidget(mSimulationOptions.getWorkingDirectory() + "/" + mSimulationOptions.getOutputFileName() + "_info.json", profiling);
     }
     MainWindow::instance()->getSimulationDialog()->showAlgorithmicDebugger(mSimulationOptions);
   }
@@ -740,7 +906,7 @@ void SimulationOutputWidget::simulationProcessFinishedHelper()
       } else {
         pSimulationMessage = new SimulationMessage;
       }
-      pSimulationMessage->mStream = "stdout";
+      pSimulationMessage->mStream = "LOG_STDOUT";
       pSimulationMessage->mType = StringHandler::Error;
       pSimulationMessage->mLevel = 0;
 
@@ -785,6 +951,14 @@ void SimulationOutputWidget::cancelCompilationOrSimulation()
     mpProgressBar->setValue(1);
     mpCancelButton->setEnabled(false);
     mpArchivedSimulationItem->setStatus(Helper::finished);
+  } else if (isPostCompilationProcessRunning()) {
+    setPostCompilationProcessKilled(true);
+    mpPostCompilationProcess->kill();
+    mpProgressLabel->setText(tr("Post compilation of %1 is cancelled.").arg(mSimulationOptions.getClassName()));
+    mpProgressBar->setRange(0, 1);
+    mpProgressBar->setValue(1);
+    mpCancelButton->setEnabled(false);
+    mpArchivedSimulationItem->setStatus(Helper::finished);
   } else if (isSimulationProcessRunning()) {
     setSimulationProcessKilled(true);
     mpSimulationProcess->kill();
@@ -805,10 +979,9 @@ void SimulationOutputWidget::openTransformationalDebugger()
   QString fileName = QString("%1/%2_info.json").arg(mSimulationOptions.getWorkingDirectory(), mSimulationOptions.getOutputFileName());
   /* open the model_info.json file */
   if (QFileInfo(fileName).exists()) {
-    MainWindow::instance()->showTransformationsWidget(fileName);
+    MainWindow::instance()->showTransformationsWidget(fileName, mSimulationOptions.getProfiling().compare(QStringLiteral("none")) != 0);
   } else {
-    QMessageBox::critical(this, QString("%1 - %2").arg(Helper::applicationName, Helper::error),
-                          GUIMessages::getMessage(GUIMessages::FILE_NOT_FOUND).arg(fileName), Helper::ok);
+    QMessageBox::critical(this, QString("%1 - %2").arg(Helper::applicationName, Helper::error), GUIMessages::getMessage(GUIMessages::FILE_NOT_FOUND).arg(fileName), Helper::ok);
   }
 }
 
@@ -937,13 +1110,18 @@ void SimulationOutputWidget::compilationProcessFinished(int exitCode, QProcess::
 {
   mIsCompilationProcessRunning = false;
   QString exitCodeStr = tr("Compilation process failed. Exited with code %1.").arg(Utilities::formatExitCode(exitCode));
+  /* Issue #7862
+   * Show instructions to select default MinGW compiler if compilation with MSVC compiler fails.
+   */
+  SimulationPage *pSimulationPage = OptionsDialog::instance()->getSimulationPage();
+  QString targetBuild = pSimulationPage->getTargetBuildComboBox()->itemData(pSimulationPage->getTargetBuildComboBox()->currentIndex()).toString();
+  if (targetBuild.startsWith("msvc")) {
+    exitCodeStr.append("\nTry compiling with the default MinGW compiler. Select \"MinGW\" in \"Tools->Options->Simulation->Target Build\".");
+  }
   if (exitStatus == QProcess::NormalExit && exitCode == 0) {
-    writeCompilationOutput(tr("Compilation process finished successfully."), Qt::blue);
+    writeCompilationOutput(tr("Compilation process finished successfully.\n"), Qt::blue);
     compilationProcessFinishedHelper(exitCode, exitStatus);
-    // if not build only and launch the algorithmic debugger is false then run the simulation process.
-    if (!mSimulationOptions.getBuildOnly() && !mSimulationOptions.getLaunchAlgorithmicDebugger()) {
-      runSimulationExecutable();
-    }
+    runPostCompilation();
   } else if (mpCompilationProcess->error() == QProcess::UnknownError) {
     writeCompilationOutput(exitCodeStr, Qt::red);
     compilationProcessFinishedHelper(exitCode, exitStatus);
@@ -1050,12 +1228,12 @@ void SimulationOutputWidget::openTransformationBrowser(QUrl url)
   if (url.scheme().compare("omedittransformationsbrowser") == 0) {
     /* read the file name */
     QString fileName = url.path();
-#ifdef WIN32
+#if defined(_WIN32)
     if (fileName.startsWith("/")) fileName.remove(0, 1);
 #endif
     /* open the model_info.json file */
     if (QFileInfo(fileName).exists()) {
-      TransformationsWidget *pTransformationsWidget = MainWindow::instance()->showTransformationsWidget(fileName);
+      TransformationsWidget *pTransformationsWidget = MainWindow::instance()->showTransformationsWidget(fileName, mSimulationOptions.getProfiling().compare(QStringLiteral("none")) != 0);
 #if (QT_VERSION >= QT_VERSION_CHECK(5, 0, 0))
       QUrlQuery query(url);
       int equationIndex = query.queryItemValue("index").toInt();

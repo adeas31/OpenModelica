@@ -56,16 +56,6 @@ end ArrayConnect3;
 //   Real[1000, 100] cells.l.f;
 //   Real[1000, 100] cells.l.e;
 // equation
-//   for $i1 in 1:999 loop
-//     for $i2 in 2:100 loop
-//       cells[$i1,$i2].l.e = cells[$i1,$i2 - 1].r.e;
-//     end for;
-//   end for;
-//   for $i1 in 1:999 loop
-//     for $i2 in 1:99 loop
-//       cells[$i1,$i2].r.f + cells[$i1,$i2 + 1].l.f = 0.0;
-//     end for;
-//   end for;
 //   for $i1 in 2:1000 loop
 //     for $i2 in 1:99 loop
 //       cells[$i1,$i2].u.e = cells[$i1 - 1,$i2].d.e;
@@ -74,6 +64,16 @@ end ArrayConnect3;
 //   for $i1 in 1:999 loop
 //     for $i2 in 1:99 loop
 //       cells[$i1,$i2].d.f + cells[$i1 + 1,$i2].u.f = 0.0;
+//     end for;
+//   end for;
+//   for $i1 in 1:999 loop
+//     for $i2 in 2:100 loop
+//       cells[$i1,$i2].l.e = cells[$i1,$i2 - 1].r.e;
+//     end for;
+//   end for;
+//   for $i1 in 1:999 loop
+//     for $i2 in 1:99 loop
+//       cells[$i1,$i2].r.f + cells[$i1,$i2 + 1].l.f = 0.0;
 //     end for;
 //   end for;
 //   for $i1 in 1:1000 loop

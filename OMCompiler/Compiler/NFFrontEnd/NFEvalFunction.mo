@@ -32,6 +32,7 @@
 encapsulated package NFEvalFunction
 
 import Binding = NFBinding;
+import Call = NFCall;
 import Class = NFClass;
 import Component = NFComponent;
 import ComponentRef = NFComponentRef;
@@ -41,6 +42,7 @@ import NFCeval.EvalTarget;
 import NFClassTree.ClassTree;
 import NFFunction.Function;
 import NFInstNode.InstNode;
+import NFInstNode.CachedData;
 import Record = NFRecord;
 import Sections = NFSections;
 import Statement = NFStatement;
@@ -57,11 +59,13 @@ import ErrorExt;
 import EvalFunctionExt = NFEvalFunctionExt;
 import FFI;
 import Flags;
+import Global;
 import MetaModelica.Dangerous.*;
 import NFPrefixes.Variability;
 import RangeIterator = NFRangeIterator;
 import SCode;
 import SCodeUtil;
+import Settings;
 import System;
 import Testsuite;
 import UnorderedMap;
@@ -78,6 +82,10 @@ function evaluate
 algorithm
   if Function.isExternal(fn) then
     result := evaluateExternal(fn, args, target);
+  elseif Function.isPartialDerivative(fn) then
+    // Partial derivatives of functions are differentiated by the backend, so
+    // make sure we don't try to evaluate the non-differentiated function body.
+    fail();
   else
     result := evaluateNormal(fn, args);
   end if;
@@ -130,6 +138,14 @@ algorithm
     Pointer.update(call_counter, call_count - 1);
     fail();
   end try;
+
+  if Flags.isSet(Flags.EVAL_FUNC_DUMP) then
+    print(AbsynUtil.pathString(Function.name(fn)) + " => ");
+    print(Expression.toString(result));
+    print("\nArguments:\n");
+    print(UnorderedMap.toString(arg_map, InstNode.name, Expression.toString));
+    print("\n");
+  end if;
 
   Pointer.update(call_counter, call_count - 1);
 end evaluateNormal;
@@ -229,6 +245,8 @@ function createArgumentMap
 protected
   Expression arg;
   list<Expression> rest_args = args;
+  Function fn;
+  CachedData cache;
 algorithm
   map := UnorderedMap.new<Expression>(InstNode.hash, InstNode.refEqual);
 
@@ -236,6 +254,14 @@ algorithm
   for i in inputs loop
     arg :: rest_args := rest_args;
     UnorderedMap.add(i, arg, map);
+
+    // If the argument is a function partial application, also add the function
+    // node to the map so we can replace calls to it with the correct function.
+    if Expression.isFunctionPointer(arg) then
+      for fn in Function.getCachedFuncs(i) loop
+        UnorderedMap.add(fn.node, arg, map);
+      end for;
+    end if;
   end for;
 
   // Add outputs and local variables to the argument map.
@@ -251,6 +277,8 @@ algorithm
   // Apply the arguments to the arguments themselves. This is done after
   // building the map to make sure all the arguments are available.
   UnorderedMap.apply(map, function applyBindingReplacement(map = map));
+  // Evaluate the values of outputs and local variables.
+  UnorderedMap.apply(map, evaluateReplacement);
 end createArgumentMap;
 
 function addMutableArgument
@@ -292,6 +320,7 @@ algorithm
 
   if Binding.isBound(binding) then
     bindingExp := Binding.getExp(binding);
+    bindingExp := Expression.map(bindingExp, Expression.clone);
   else
     bindingExp := buildBinding(node, map, mutableParams, buildArrayBinding);
   end if;
@@ -380,7 +409,7 @@ algorithm
         UnorderedMap.apply(local_map, function applyBindingReplacement(map = local_map));
         bindings := UnorderedMap.valueList(local_map);
       then
-        Expression.makeRecord(InstNode.scopePath(cls_node, includeRoot = true), cls.ty, bindings);
+        Expression.makeRecord(InstNode.fullPath(cls_node), cls.ty, bindings);
 
     case Class.TYPED_DERIVED() then buildRecordBinding(cls.baseClass, map, mutableParams);
   end match;
@@ -408,6 +437,8 @@ function applyReplacements2
 algorithm
   exp := match exp
     case Expression.CREF() then applyReplacementCref(map, exp.cref, exp);
+    case Expression.CALL() then applyReplacementCall(map, exp.call, exp);
+    case Expression.UNBOX() then exp.exp;
     else exp;
   end match;
 end applyReplacements2;
@@ -463,6 +494,138 @@ algorithm
   end if;
 end applyReplacementCref;
 
+function applyReplacementCall
+  "Checks if a function call refers to a function pointer given as a function
+   partial application expression, and if so replaces the call."
+  input ArgumentMap map;
+  input Call call;
+  input Expression exp;
+  output Expression outExp;
+protected
+  InstNode repl_node;
+  Option<Expression> repl_oexp;
+  Expression repl_exp;
+  list<Expression> args;
+  list<String> names;
+  Function fn;
+algorithm
+  outExp := match call
+    case Call.TYPED_CALL()
+      algorithm
+        repl_oexp := UnorderedMap.get(call.fn.node, map);
+
+        if isSome(repl_oexp) then
+          SOME(repl_exp) := repl_oexp;
+
+          outExp := match repl_exp
+            case Expression.CREF(ty = Type.FUNCTION(fn = fn))
+              algorithm
+                // A function pointer is just a function partial application without any extra arguments.
+                call.arguments := mergeFunctionApplicationArgs(call.fn, call.arguments, fn, {}, {});
+                call.fn := fn;
+              then
+                Expression.CALL(call);
+
+            case Expression.PARTIAL_FUNCTION_APPLICATION()
+              algorithm
+                fn := listHead(Function.getCachedFuncs(ComponentRef.node(repl_exp.fn)));
+                // Merge the arguments from the original call with the ones in the function partial application.
+                call.arguments := mergeFunctionApplicationArgs(call.fn, call.arguments, fn, repl_exp.args, repl_exp.argNames);
+                // Replace the function with the one in the function partial application.
+                call.fn := fn;
+              then
+                Expression.CALL(call);
+
+            else exp;
+          end match;
+        else
+          outExp := exp;
+        end if;
+      then
+        outExp;
+
+    else exp;
+  end match;
+end applyReplacementCall;
+
+function evaluateReplacement
+  "Evaluates the values of mutable variables."
+  input output Expression exp;
+algorithm
+  () := match exp
+    case Expression.MUTABLE()
+      algorithm
+        Expression.applyMutable(exp, evaluateReplacement2);
+      then
+        ();
+
+    else ();
+  end match;
+end evaluateReplacement;
+
+function evaluateReplacement2
+  input output Expression exp;
+algorithm
+  exp := match exp
+    // A mutable expression, only evaluate the expression it contains.
+    case Expression.MUTABLE()
+      algorithm
+        Expression.applyMutable(exp, evaluateReplacement2);
+      then
+        exp;
+
+    // A record expression, evaluate the fields but keep them mutable if they are.
+    case Expression.RECORD()
+      algorithm
+        exp.elements := list(evaluateReplacement2(e) for e in exp.elements);
+      then
+        exp;
+
+    else if Expression.contains(exp, Expression.isEmpty) then exp else Ceval.evalExp(exp);
+  end match;
+end evaluateReplacement2;
+
+function mergeFunctionApplicationArgs
+  input Function oldFn;
+  input list<Expression> oldArgs;
+  input Function newFn;
+  input list<Expression> newArgs;
+  input list<String> argNames;
+  output list<Expression> outArgs = {};
+protected
+  UnorderedMap<String, Expression> arg_map;
+  list<Expression> args;
+algorithm
+  arg_map := UnorderedMap.new<Expression>(stringHashDjb2, stringEq);
+
+  // Add default arguments from the slots.
+  for s in newFn.slots loop
+    if isSome(s.default) then
+      UnorderedMap.add(InstNode.name(s.node), Expression.unbox(Util.getOption(s.default)), arg_map);
+    end if;
+  end for;
+
+  // Add arguments from the function call we're replacing.
+  args := oldArgs;
+  for i in oldFn.inputs loop
+    UnorderedMap.add(InstNode.name(i), Expression.unbox(listHead(args)), arg_map);
+    args := listRest(args);
+  end for;
+
+  // Add arguments from the function partial application expression.
+  args := newArgs;
+  for n in argNames loop
+    UnorderedMap.add(n, Expression.unbox(listHead(args)), arg_map);
+    args := listRest(args);
+  end for;
+
+  for i in newFn.inputs loop
+    outArgs := UnorderedMap.getOrFail(InstNode.name(i), arg_map) :: outArgs;
+  end for;
+
+  outArgs := listReverseInPlace(outArgs);
+end mergeFunctionApplicationArgs;
+
 function optimizeBody
   input output list<Statement> body;
 algorithm
@@ -483,12 +646,9 @@ algorithm
         // Make a mutable expression with a placeholder value.
         iter_exp := Expression.makeMutable(Expression.EMPTY(InstNode.getType(stmt.iterator)));
         // Replace the iterator with the expression in the body of the for loop.
-        stmt.body := list(
-          Statement.mapExp(s, function Expression.replaceIterator(
-            iterator = stmt.iterator, iteratorValue = iter_exp))
-          for s in stmt.body);
+        stmt.body := Statement.replaceIteratorList(stmt.body, stmt.iterator, iter_exp);
         // Replace the iterator node with the mutable expression too.
-        stmt.iterator := InstNode.EXP_NODE(iter_exp);
+        stmt.iterator := InstNode.ITERATOR_NODE(iter_exp);
       then
         ();
 
@@ -531,7 +691,7 @@ algorithm
   () := match value
     case Expression.EMPTY()
       algorithm
-        Error.addSourceMessage(Error.UNASSIGNED_FUNCTION_OUTPUT,
+        Error.addSourceMessageAsError(Error.UNASSIGNED_FUNCTION_OUTPUT,
           {InstNode.name(outputNode)}, InstNode.info(outputNode));
       then
         fail();
@@ -664,7 +824,7 @@ protected
   Expression sub, val;
   list<Subscript> rest_subs;
   Integer idx;
-  list<Expression> subs, vals;
+  array<Expression> subs, vals;
 algorithm
   result := match (arrayExp, subscripts)
     case (Expression.ARRAY(), Subscript.INDEX(sub) :: rest_subs) guard Expression.isScalarLiteral(sub)
@@ -672,10 +832,10 @@ algorithm
         idx := Expression.toInteger(sub);
 
         if listEmpty(rest_subs) then
-          arrayExp.elements := List.set(arrayExp.elements, idx, value);
+          arrayUpdate(arrayExp.elements, idx, value);
         else
-          arrayExp.elements := List.set(arrayExp.elements, idx,
-            assignArrayElement(listGet(arrayExp.elements, idx), rest_subs, value));
+          arrayUpdate(arrayExp.elements, idx,
+            assignArrayElement(arrayGet(arrayExp.elements, idx), rest_subs, value));
         end if;
       then
         arrayExp;
@@ -685,18 +845,24 @@ algorithm
         subs := Expression.arrayElements(sub);
         vals := Expression.arrayElements(value);
 
+        if arrayLength(subs) > arrayLength(vals) then
+          fail();
+        end if;
+
         if listEmpty(rest_subs) then
-          for s in subs loop
-            val :: vals := vals;
-            idx := Expression.toInteger(s);
-            arrayExp.elements := List.set(arrayExp.elements, idx, val);
+          for i in 1:arrayLength(subs) loop
+            sub := arrayGetNoBoundsChecking(subs, i);
+            val := arrayGetNoBoundsChecking(vals, i);
+            idx := Expression.toInteger(sub);
+            arrayUpdate(arrayExp.elements, idx, val);
           end for;
         else
-          for s in subs loop
-            val :: vals := vals;
-            idx := Expression.toInteger(s);
-            arrayExp.elements := List.set(arrayExp.elements, idx,
-              assignArrayElement(listGet(arrayExp.elements, idx), rest_subs, val));
+          for i in 1:arrayLength(subs) loop
+            sub := arrayGetNoBoundsChecking(subs, i);
+            val := arrayGetNoBoundsChecking(vals, i);
+            idx := Expression.toInteger(sub);
+            arrayUpdate(arrayExp.elements, idx,
+              assignArrayElement(arrayGet(arrayExp.elements, idx), rest_subs, val));
           end for;
         end if;
       then
@@ -705,10 +871,10 @@ algorithm
     case (Expression.ARRAY(), Subscript.WHOLE() :: rest_subs)
       algorithm
         if listEmpty(rest_subs) then
-          arrayExp.elements := Expression.arrayElements(value);
+          arrayExp.elements := arrayCopy(Expression.arrayElements(value));
         else
-          arrayExp.elements := list(assignArrayElement(e, rest_subs, v) threaded for
-            e in arrayExp.elements, v in Expression.arrayElements(value));
+          arrayExp.elements := listArray(list(assignArrayElement(e, rest_subs, v) threaded for
+            e in arrayExp.elements, v in Expression.arrayElements(value)));
         end if;
       then
         arrayExp;
@@ -802,7 +968,7 @@ algorithm
   range_iter := RangeIterator.fromExp(range_exp);
 
   if RangeIterator.hasNext(range_iter) then
-    InstNode.EXP_NODE(exp = Expression.MUTABLE(exp = iter_exp)) := iterator;
+    InstNode.ITERATOR_NODE(exp = Expression.MUTABLE(exp = iter_exp)) := iterator;
 
     // Loop through each value in the iteration range.
     while RangeIterator.hasNext(range_iter) loop
@@ -977,24 +1143,24 @@ function callExternalFunction
 protected
   SourceInfo info;
   String pkg_name;
-  Integer lib_handle, fn_handle;
   array<Expression> mapped_args;
   array<FFI.ArgSpec> specs;
   Type ret_ty;
   Expression res;
   list<Expression> output_vals;
+  Integer fn_handle;
 algorithm
   info := InstNode.info(fn.node);
   checkExtReturnValue(outputRef, info);
 
   pkg_name := InstNode.name(InstNode.libraryScope(fn.node));
-  (lib_handle, fn_handle) := loadLibraryFunction(extName, pkg_name, extAnnotation, debug, info);
+  fn_handle := loadLibraryFunction(pkg_name, extName, extAnnotation, debug, info);
 
   (mapped_args, specs) := mapExternalArgs(fn, args, extArgs);
   ret_ty := if ComponentRef.isCref(outputRef) then ComponentRef.nodeType(outputRef) else Type.NORETCALL();
   (res, output_vals) := FFI.callFunction(fn_handle, mapped_args, specs, ret_ty);
 
-  freeLibraryFunction(lib_handle, fn_handle, debug);
+  freeLibraryFunction(fn_handle, debug);
 
   if listEmpty(output_vals) then
     // No output parameters, just return the return value.
@@ -1005,23 +1171,78 @@ algorithm
   end if;
 end callExternalFunction;
 
+function lookupLibraryInCache
+  input String libName;
+  output Integer libHandle;
+protected
+  list<tuple<String, Integer>> cache;
+  String name;
+algorithm
+  cache := getGlobalRoot(Global.sharedLibraryCacheIndex);
+
+  for l in cache loop
+    (name, libHandle) := l;
+
+    if name == libName then
+      return;
+    end if;
+  end for;
+
+  libHandle := -1;
+end lookupLibraryInCache;
+
+function cacheLibrary
+  input String libName;
+  input Integer libHandle;
+protected
+  list<tuple<String, Integer>> cache;
+algorithm
+  cache := getGlobalRoot(Global.sharedLibraryCacheIndex);
+  cache := (libName, libHandle) :: cache;
+  setGlobalRoot(Global.sharedLibraryCacheIndex, cache);
+end cacheLibrary;
+
+public
+function clearLibraryCache
+protected
+  list<tuple<String, Integer>> cache;
+  Integer lib_handle;
+algorithm
+  cache := getGlobalRoot(Global.sharedLibraryCacheIndex);
+
+  for v in cache loop
+    (_, lib_handle) := v;
+    System.freeLibrary(lib_handle, false);
+  end for;
+
+  setGlobalRoot(Global.sharedLibraryCacheIndex, {});
+end clearLibraryCache;
+
+protected
 function loadLibraryFunction
   "Tries to load the function with the given function that's either linked into
-   the compiler itself or in a shared library provided by the user. Returns
-   handles to the shared library and function that should to be freed by
-   freeLibraryFunction when no longer needed."
-  input String fnName;
+   the compiler itself or in a shared library provided by the user. Returns a
+   handle to the function that should be freed with freeLibraryFunction when the
+   function is no longer needed."
   input String libName;
+  input String fnName;
   input Option<SCode.Annotation> extAnnotation;
   input Boolean debug;
   input SourceInfo info;
-  output Integer libHandle;
   output Integer fnHandle;
 protected
+  Integer lib_handle;
   SCode.Annotation ann;
-  list<String> libs = {}, dirs = {}, paths = {};
+  list<String> libs = {}, dirs = {}, paths = {}, libs2 = {};
   Boolean found = false;
+  String installLibDir;
 algorithm
+  if Autoconf.os == "Windows_NT" then
+    installLibDir := Settings.getInstallationDirectoryPath() + "/bin";
+  else
+    installLibDir := Settings.getInstallationDirectoryPath() + "/lib/" + Autoconf.triple + "/omc";
+  end if;
+
   // Read libraries and library directories from the annotation if it exists.
   if isSome(extAnnotation) then
     SOME(ann) := extAnnotation;
@@ -1034,17 +1255,30 @@ algorithm
   libs := List.unique(libs);
   dirs := List.unique(dirs);
 
+  // look for the lib names prefixed with 'lib' as well
+  for lib in libs loop
+    if not stringEmpty(lib) then
+      libs2 := lib :: libs2;
+      libs2 := "lib" + lib :: libs2;
+    end if;
+  end for;
+  libs := libs2;
+
+  // Add the special "ffi" directory inside the lib dir as the last search path.
+  // This is where we put the ModelicaExternal libs right now. So that their shared
+  // versions are not in the lib/omc dir complicating normal linking.
+  // ( remembering we append to the front of the list as we process things )
+  for lib in libs loop
+    paths := (installLibDir + "/ffi/" + lib + Autoconf.dllExt) :: paths;
+  end for;
+
   // Create paths for any combination of library and library directory.
   for lib in libs loop
     // For functions that are linked into the compiler itself we pass an empty
     // string to loadLibrary.
-    if stringEmpty(lib) or lib == "ModelicaExternalC" or lib == "ModelicaIO" then
+    if stringEmpty(lib) then
       paths := "" :: paths;
       continue;
-    end if;
-
-    if Autoconf.os == "linux" then
-      lib := "lib" + lib;
     end if;
 
     lib := lib + Autoconf.dllExt;
@@ -1053,7 +1287,14 @@ algorithm
       // Search for both dir/lib and e.g. dir/linux64/lib.
       paths := (dir + "/" + lib) :: paths;
       paths := (dir + "/" + System.modelicaPlatform() + "/" + lib) :: paths;
+
+      if Autoconf.os == "Windows_NT" then
+        paths := (dir + "/" + System.openModelicaPlatform() + "/" + lib) :: paths;
+      end if;
+
     end for;
+
+    paths := installLibDir + "/" + lib :: paths;
   end for;
 
   // If no Library annotation was given, append an empty string to search for
@@ -1072,8 +1313,14 @@ algorithm
         path := uriToFilename(path);
       end if;
 
-      libHandle := System.loadLibrary(path, relativePath = false, printDebug = debug);
-      fnHandle := System.lookupFunction(libHandle, fnName);
+      lib_handle := lookupLibraryInCache(path);
+
+      if lib_handle == -1 then
+        lib_handle := System.loadLibrary(path, relativePath = false, printDebug = debug);
+        cacheLibrary(path, lib_handle);
+      end if;
+
+      fnHandle := System.lookupFunction(lib_handle, fnName);
       found := true;
     else
     end try;
@@ -1125,13 +1372,11 @@ algorithm
 end parseExternalAnnotationExp;
 
 function freeLibraryFunction
-  "Frees the function and shared library loaded by loadLibraryFunction."
-  input Integer libHandle;
+  "Frees the function loaded by loadLibraryFunction."
   input Integer fnHandle;
   input Boolean debug;
 algorithm
   System.freeFunction(fnHandle, debug);
-  System.freeLibrary(libHandle, debug);
 end freeLibraryFunction;
 
 function mapExternalArgs
@@ -1260,7 +1505,7 @@ algorithm
       expl := getExternalOutputResult(c, map) :: expl;
     end for;
 
-    exp := Expression.makeRecord(InstNode.scopePath(cls_node, includeRoot = true),
+    exp := Expression.makeRecord(InstNode.fullPath(cls_node),
       InstNode.getType(cls_node), listReverseInPlace(expl));
   else
     Error.assertion(false, getInstanceName() +

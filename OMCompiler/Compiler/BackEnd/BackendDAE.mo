@@ -189,9 +189,12 @@ end BackendDAEType;
 
 uniontype DataReconciliationData
   record DATA_RECON
-    Jacobian symbolicJacobian "SET_S w.r.t ...";
+    Jacobian symbolicJacobian "jacobians for set-C and set-S";
     Variables setcVars "setc solved vars";
     Variables datareconinputs;
+    Option<Variables> setBVars "setB solved vars which computes boundary conditions";
+    Option<Jacobian> symbolicJacobianH "For solving state estimation we need two Jacobians F for data Reconciliation and H for boundary conditions set-B and set-Sprime";
+    Integer relatedBoundaryConditions "count number of boundary conditions which failed the extraction algorithm";
     // ... maybe more DATA for the code generation
   end DATA_RECON;
 end DataReconciliationData;
@@ -244,11 +247,12 @@ uniontype Var "variables"
     .DAE.ElementSource source "origin of variable";
     Option<.DAE.VariableAttributes> values "values on built-in attributes";
     Option<TearingSelect> tearingSelectOption "value for TearingSelect";
-    .DAE.Exp hideResult "expression from the hideResult annotation";
+    Option<.DAE.Exp> hideResult "expression from the hideResult annotation";
     Option<SCode.Comment> comment "this contains the comment and annotation from Absyn";
     .DAE.ConnectorType connectorType "flow, stream, unspecified or not connector.";
     .DAE.VarInnerOuter innerOuter "inner, outer, inner outer or unspecified";
     Boolean unreplaceable "indicates if it is allowed to replace this variable";
+    Boolean initNonlinear "indicates if the variable is a nonlinear iteration variable during initialization";
   end VAR;
 end Var;
 
@@ -272,7 +276,7 @@ uniontype VarKind "variable kind"
   record CONST end CONST;
   record EXTOBJ Absyn.Path fullClassName; end EXTOBJ;
   record JAC_VAR end JAC_VAR;
-  record JAC_DIFF_VAR end JAC_DIFF_VAR;
+  record JAC_TMP_VAR end JAC_TMP_VAR;
   record SEED_VAR end SEED_VAR;
   record OPT_CONSTR end OPT_CONSTR;
   record OPT_FCONSTR end OPT_FCONSTR;
@@ -635,11 +639,11 @@ end StateSet;
 public
 uniontype EventInfo
   record EVENT_INFO
-    list<TimeEvent> timeEvents         "stores all information related to time events";
+    list<TimeEvent> timeEvents    "stores all information related to time events";
     ZeroCrossingSet zeroCrossings "list of zero crossing conditions";
-    DoubleEnded.MutableList<ZeroCrossing> relations    "list of zero crossing function as before";
+    DoubleEnded.MutableList<ZeroCrossing> relations "list of zero crossing function as before";
     ZeroCrossingSet samples       "[deprecated] list of sample as before, only used by cpp runtime (TODO: REMOVE ME)";
-    Integer numberMathEvents           "stores the number of math function that trigger events e.g. floor, ceil, integer, ...";
+    Integer numberMathEvents      "stores the number of math function that trigger events e.g. floor, ceil, integer, ...";
   end EVENT_INFO;
 end EventInfo;
 
@@ -653,10 +657,21 @@ end ZeroCrossingSet;
 public
 uniontype ZeroCrossing
   record ZERO_CROSSING
-    .DAE.Exp relation_         "function";
-    list<Integer> occurEquLst  "list of equations where the function occurs";
+    Integer index                           "zero crossing index";
+    .DAE.Exp relation_                      "function";
+    list<Integer> occurEquLst               "list of equations where the function occurs";
+    Option<list<SimIterator>> iter  "optional iterator for for-loops";
   end ZERO_CROSSING;
 end ZeroCrossing;
+
+public uniontype SimIterator
+  record SIM_ITERATOR
+    .DAE.ComponentRef name;
+    Integer start;
+    Integer step;
+    Integer size;
+  end SIM_ITERATOR;
+end SimIterator;
 
 public
 uniontype TimeEvent
@@ -671,7 +686,7 @@ uniontype TimeEvent
 end TimeEvent;
 
 //
-// AdjacencyMatrixes
+// AdjacencyMatrices
 //
 public
 type AdjacencyMatrixElementEntry = Integer;
@@ -775,13 +790,14 @@ uniontype Jacobian
     Option<SymbolicJacobian> jacobian;
     SparsePattern sparsePattern;
     SparseColoring coloring;
+    NonlinearPattern nonlinearPattern;
   end GENERIC_JACOBIAN;
 
   record EMPTY_JACOBIAN end EMPTY_JACOBIAN;
 end Jacobian;
 
 public
-type SymbolicJacobians = list<tuple<Option<SymbolicJacobian>, SparsePattern, SparseColoring>>;
+type SymbolicJacobians = list<tuple<Option<SymbolicJacobian>, SparsePattern, SparseColoring, NonlinearPattern>>;
 
 public
 type SymbolicJacobian = tuple<BackendDAE,               // symbolic equation system
@@ -794,6 +810,8 @@ type SymbolicJacobian = tuple<BackendDAE,               // symbolic equation sys
 
 type SparsePatternCref = tuple< .DAE.ComponentRef, list< .DAE.ComponentRef>>;
 type SparsePatternCrefs = list<SparsePatternCref>;
+type NonlinearPatternCref = SparsePatternCref;
+type NonlinearPatternCrefs = SparsePatternCrefs;
 
 public
 type SparsePattern = tuple<SparsePatternCrefs,              // column-wise sparse pattern
@@ -802,8 +820,11 @@ type SparsePattern = tuple<SparsePatternCrefs,              // column-wise spars
                                  list< .DAE.ComponentRef>>, // diffed vars (residual vars) of associated jacobian
                            Integer>;                        // nonZeroElements
 
+type NonlinearPattern = SparsePattern;
+
 public
 constant SparsePattern emptySparsePattern = ({},{},({},{}),0);
+constant NonlinearPattern emptyNonlinearPattern = ({},{},({},{}),0);
 
 public
 type SparseColoring = list<list< .DAE.ComponentRef>>;   // colouring
@@ -843,6 +864,7 @@ uniontype DifferentiationType "Define the behaviour of differentiation method fo
   end DIFF_FULL_JACOBIAN;
 
   record GENERIC_GRADIENT "Used to generate a generic gradient for generation the Jacobian matrix while the runtime."
+    Boolean daeMode       "true if computing for dae mode";
   end GENERIC_GRADIENT;
 end DifferentiationType;
 

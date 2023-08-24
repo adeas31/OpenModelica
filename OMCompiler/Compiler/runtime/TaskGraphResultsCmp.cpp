@@ -32,6 +32,7 @@
 
 #include "TaskGraphResultsCmp.h"
 #include <sys/stat.h>
+#include "util/omc_file.h"
 
 Node::Node() : id(""), name(""), calcTime(-1), threadId(""), taskNumber(-1), taskId(-1), simCodeEqs()
 {
@@ -148,8 +149,7 @@ GraphParser::~GraphParser()
 
 bool GraphParser::CheckIfFileExists(const char* fileName)
 {
-  struct stat stats;
-  return 0 == stat(fileName, &stats);
+  return omc_file_exists(fileName);
 }
 
 GraphMLParser::GraphMLParser() : GraphParser()
@@ -448,7 +448,7 @@ void GraphMLParser::ParseGraph(Graph *currentGraph, const char* fileName, NodeCo
   userData.intValue = 0;
   userData.nodeSet = new std::set<Node*, NodeComparator>(nodeComparator);
   userData.errorMsg = _errorMsg;
-  graphFile = fopen(fileName, "rb");
+  graphFile = omc_fopen(fileName, "rb");
   parser = XML_ParserCreate(NULL);
   XML_SetUserData(parser, &userData);
   XML_SetElementHandler(parser, StartElement, EndElement);

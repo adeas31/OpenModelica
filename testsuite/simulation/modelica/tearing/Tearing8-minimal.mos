@@ -27,14 +27,12 @@ val(R1.v,0.2); getErrorString();
 // record SimulationResult
 //     resultFile = "Tearing8_res.mat",
 //     simulationOptions = "startTime = 0.0, stopTime = 1.0, numberOfIntervals = 500, tolerance = 1e-06, method = 'dassl', fileNamePrefix = 'Tearing8', options = '', outputFormat = 'mat', variableFilter = '.*', cflags = '', simflags = ''",
-//     messages = "stdout            | info    | Using sparse solver for linear system 0,
-// |                 | |       | because density of 0.087 remains under threshold of 0.200 or size of 29 exceeds threshold of 201.
-// |                 | |       | The maximum density and the minimal system size for using sparse solvers can be specified
-// |                 | |       | using the runtime flags '<-lssMaxDensity=value>' and '<-lssMinSize=value>'.
-// stdout            | info    | Using sparse solver for linear system 1,
-// |                 | |       | because density of 0.087 remains under threshold of 0.200 or size of 29 exceeds threshold of 201.
-// |                 | |       | The maximum density and the minimal system size for using sparse solvers can be specified
-// |                 | |       | using the runtime flags '<-lssMaxDensity=value>' and '<-lssMinSize=value>'.
+//     messages = "LOG_STDOUT        | info    | Using sparse solver for linear system 0,
+// |                 | |       | because density of 0.087 remains under threshold of 0.200.
+// LOG_STDOUT        | info    | Using sparse solver for linear system 1,
+// |                 | |       | because density of 0.087 remains under threshold of 0.200.
+// LOG_STDOUT        | info    | The maximum density for using sparse solvers can be specified
+// |                 | |       | using the runtime flag '<-lssMaxDensity=value>'.
 // LOG_SUCCESS       | info    | The initialization finished successfully without homotopy method.
 // LOG_SUCCESS       | info    | The simulation finished successfully.
 // "
@@ -71,12 +69,13 @@ val(R1.v,0.2); getErrorString();
 //  * Record equations: 0
 //  * When equations: 0
 //  * If-equations: 0
-//  * Equation systems (linear and non-linear blocks): 0
+//  * Equation systems (not torn): 0
 //  * Torn equation systems: 1
 //  * Mixed (continuous/discrete) equation systems: 0
 // Notification: Torn system details for strict tearing set:
-//  * Linear torn systems: 1 {(29,8.7%) 0}
-//  * Non-linear torn systems: 0
+//  * Linear torn systems (#iteration vars, #inner vars, density): 1 system
+//    {(29,0,8.7%)}
+//  * Non-linear torn systems (#iteration vars, #inner vars): 0 systems
 // Notification: Model statistics after passing the back-end for simulation:
 //  * Number of independent subsystems: 1
 //  * Number of states: 0 ('-d=stateselection' for list of states)
@@ -91,12 +90,13 @@ val(R1.v,0.2); getErrorString();
 //  * Record equations: 0
 //  * When equations: 0
 //  * If-equations: 0
-//  * Equation systems (linear and non-linear blocks): 0
+//  * Equation systems (not torn): 0
 //  * Torn equation systems: 1
 //  * Mixed (continuous/discrete) equation systems: 0
 // Notification: Torn system details for strict tearing set:
-//  * Linear torn systems: 1 {(29,8.7%) 0}
-//  * Non-linear torn systems: 0
+//  * Linear torn systems (#iteration vars, #inner vars, density): 1 system
+//    {(29,0,8.7%)}
+//  * Non-linear torn systems (#iteration vars, #inner vars): 0 systems
 // "
 // 0.3170188387650512
 // ""

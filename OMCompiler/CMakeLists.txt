@@ -1,5 +1,31 @@
 cmake_minimum_required(VERSION 3.14)
-project(OMCompiler C CXX Fortran)
+project(OMCompiler C CXX)
+
+# For now, unless explicitly specified otherwise, we set install component simrt
+# for everything installed from the OMCompiler directory. There are some places that
+# modify this explicitly, e.g., the omc compiler ('COMPONENT omc'), the cpp runtime (COMPONENT simrtcpp),
+# and FMU realted installtions (COMPONENT fmu)
+set(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME simrt)
+
+## OPTIONS #################################################################################################
+
+omc_option(OM_OMC_ENABLE_FORTRAN "Enable Fortran support. Fortran is required if you enable IPOPT support." ON)
+if(OM_OMC_ENABLE_FORTRAN)
+  enable_language(Fortran)
+endif()
+
+
+omc_option(OM_OMC_ENABLE_IPOPT "Should we enable dynamic optimization support with Ipopt." ON)
+if(OM_OMC_ENABLE_IPOPT AND NOT OM_OMC_ENABLE_FORTRAN)
+  message(FATAL_ERROR "Ipopt support requires Fortran support to be enabled. You can disable Ipopt by adding -DOM_OMC_ENABLE_IPOPT=OFF to the CMake configure command.")
+endif()
+
+omc_option(OM_OMC_ENABLE_CPP_RUNTIME "Enable, build, and install the C++ simulation runtime libraries." ON)
+
+omc_option(OM_OMC_USE_CORBA "Should use corba." OFF)
+
+omc_option(OM_OMC_USE_LAPACK "Should we use lapack." ON)
+
 
 # Remove -DNDEBUG from release build command lines. The reason is that -DNDEBUG completely
 # removes assert(...) statements. We have some assert statements with side effects. Of course,
@@ -8,25 +34,8 @@ project(OMCompiler C CXX Fortran)
 string(REPLACE "-DNDEBUG" "" CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO}")
 string(REPLACE "-DNDEBUG" "" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
 
-string(REPLACE "-DNDEBUG" "" CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO}")
-string(REPLACE "-DNDEBUG" "" CMAKE_C_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
-
-## Set position independent code for OMCompiler wide. We will take some performance hit from this.
-## However it allows us to build all static libs and combine them later to single shared libs
-## for easy configuration. Instead of having dozens of shared libs.
-## This can of course be turned of if we do not care about memory and are happy to sacrifice a
-## bunch of memory for some performance gain. If so disable this and change the few libraries
-## we build as shared to static (see SimulationRuntime/c, which contains the only shared libs to come).
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-
-# options
-omc_option(OMC_USE_CORBA "Should use corba." OFF)
-
-omc_option(OMC_USE_LPSOLVE "Should we use lpsolve." OFF)
-omc_option(OMC_BUILD_LPSOLVE "Should we build our own 3rdParty/lpsolve." OFF)
-
-omc_option(OMC_USE_LAPACK "Should we use lapack." ON)
-
+string(REPLACE "-DNDEBUG" "" CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO}")
+string(REPLACE "-DNDEBUG" "" CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE}")
 
 ## Add a config library for OMC. They will provide access to common config headres such as
 ## config.h, version.h ... These headers, right now for us, are in 'OMCompiler' directory. So
@@ -40,15 +49,16 @@ target_include_directories(omc_config INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 omc_add_subdirectory(3rdParty)
 
 
-# We want to make sure include directories are handled properly.
-# We have to disable implicit function declaration so that we can be consistent and correct with our inclusions.
+# We want to make sure include directories are handled properly by disabling implicit function
+# declaration so that we can be consistent and correct with our inclusions.
 # We do this after 3rdParty is added!! because some libs in FMILib use implicit function declaration
-# because of missing #defines due to bad configuration.
-if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    add_compile_options($<$<COMPILE_LANGUAGE:C>:-Werror=implicit-function-declaration>)
+# because of missing #defines due to bad configuration for now.
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+  add_compile_options($<$<COMPILE_LANGUAGE:C>:-Werror=implicit-function-declaration>)
+  add_compile_options($<$<COMPILE_LANGUAGE:C>:-Werror=incompatible-pointer-types>)
 endif()
 
 omc_add_subdirectory(SimulationRuntime)
 omc_add_subdirectory(Parser)
 omc_add_subdirectory(Compiler)
-
+omc_add_subdirectory(Examples)

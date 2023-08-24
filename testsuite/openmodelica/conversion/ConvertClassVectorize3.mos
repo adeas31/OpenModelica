@@ -12,12 +12,12 @@ loadString("
   end ConvertClassVectorize3;
 ");
 
-convertPackage(ConvertClassVectorize3, "scripts/ConvertClassVectorize3.mos");
+runConversionScript(ConvertClassVectorize3, "scripts/ConvertClassVectorize3.mos");
 getErrorString();
 
 // Result:
 // true
 // false
-// "[scripts/ConvertClassVectorize3.mos:1:1-1:31:writable] Error: Invalid conversion rule ‘convertClass({\"A\", \"B\"}, {\"X\"})‘.
+// "[scripts/ConvertClassVectorize3.mos:1:1-1:31:writable] Error: Invalid conversion rule 'convertClass({\"A\", \"B\"}, {\"X\"})'.
 // "
 // endResult

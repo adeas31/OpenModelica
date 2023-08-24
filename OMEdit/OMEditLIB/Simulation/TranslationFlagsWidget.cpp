@@ -53,30 +53,21 @@ TranslationFlagsWidget::TranslationFlagsWidget(QWidget *pParent)
   OMCInterface::getAvailableMatchingAlgorithms_res matchingAlgorithms;
   matchingAlgorithms = MainWindow::instance()->getOMCProxy()->getAvailableMatchingAlgorithms();
   mpMatchingAlgorithmComboBox = new QComboBox;
-  int i = 0;
-  foreach (QString matchingAlgorithmChoice, matchingAlgorithms.allChoices) {
-    mpMatchingAlgorithmComboBox->addItem(matchingAlgorithmChoice);
-    mpMatchingAlgorithmComboBox->setItemData(i, matchingAlgorithms.allComments[i], Qt::ToolTipRole);
-    i++;
-  }
-  connect(mpMatchingAlgorithmComboBox, SIGNAL(currentIndexChanged(int)), SLOT(updateMatchingAlgorithmToolTip(int)));
+  mpMatchingAlgorithmComboBox->addItems(matchingAlgorithms.allChoices);
+  Utilities::setToolTip(mpMatchingAlgorithmComboBox, "Matching Algorithms", matchingAlgorithms.allComments);
   // Index Reduction Method
   mpIndexReductionMethodLabel = new Label(tr("Index Reduction Method:"));
   OMCInterface::getAvailableIndexReductionMethods_res indexReductionMethods;
   indexReductionMethods = MainWindow::instance()->getOMCProxy()->getAvailableIndexReductionMethods();
   mpIndexReductionMethodComboBox = new QComboBox;
-  i = 0;
-  foreach (QString indexReductionChoice, indexReductionMethods.allChoices) {
-    mpIndexReductionMethodComboBox->addItem(indexReductionChoice);
-    mpIndexReductionMethodComboBox->setItemData(i, indexReductionMethods.allComments[i], Qt::ToolTipRole);
-    i++;
-  }
-  connect(mpIndexReductionMethodComboBox, SIGNAL(currentIndexChanged(int)), SLOT(updateIndexReductionToolTip(int)));
+  mpIndexReductionMethodComboBox->addItems(indexReductionMethods.allChoices);
+  Utilities::setToolTip(mpIndexReductionMethodComboBox, "Index Reduction Methods", indexReductionMethods.allComments);
   mpInitializationCheckBox = new QCheckBox(tr("Show additional information from the initialization process"));
   mpEvaluateAllParametersCheckBox = new QCheckBox(tr("Evaluate all parameters (faster simulation, cannot change them at runtime, does not work with old frontend)"));
   mpNLSanalyticJacobianCheckBox = new QCheckBox(tr("Enable analytical jacobian for non-linear strong components"));
   mpParmodautoCheckBox = new QCheckBox(tr("Enable parallelization of independent systems of equations (Experimental)"));
   mpOldInstantiationCheckBox = new QCheckBox(tr("Enable old frontend for code generation"));
+  mpEnableFMUImportCheckBox = new QCheckBox(tr("Enable FMU Import"));
   mpAdditionalTranslationFlagsLabel = new Label(tr("Additional Translation Flags:"));
   mpAdditionalTranslationFlagsLabel->setToolTip(Helper::translationFlagsTip);
   mpAdditionalTranslationFlagsTextBox = new QLineEdit;
@@ -99,6 +90,7 @@ TranslationFlagsWidget::TranslationFlagsWidget(QWidget *pParent)
   pMainLayout->addWidget(mpNLSanalyticJacobianCheckBox, row++, 0, 1, 3);
   pMainLayout->addWidget(mpParmodautoCheckBox, row++, 0, 1, 3);
   pMainLayout->addWidget(mpOldInstantiationCheckBox, row++, 0, 1, 3);
+  pMainLayout->addWidget(mpEnableFMUImportCheckBox, row++, 0, 1, 3);
   pMainLayout->addWidget(mpAdditionalTranslationFlagsLabel, row, 0);
   pMainLayout->addWidget(mpAdditionalTranslationFlagsTextBox, row, 1);
   pMainLayout->addWidget(mpTranslationFlagsHelpButton, row++, 2);
@@ -125,6 +117,7 @@ void TranslationFlagsWidget::applySimulationOptions(const SimulationOptions &sim
   mpNLSanalyticJacobianCheckBox->setChecked(simulationOptions.getNLSanalyticJacobian());
   mpParmodautoCheckBox->setChecked(simulationOptions.getParmodauto());
   mpOldInstantiationCheckBox->setChecked(simulationOptions.getOldInstantiation());
+  mpEnableFMUImportCheckBox->setChecked(simulationOptions.getEnableFMUImport());
   mpAdditionalTranslationFlagsTextBox->setText(simulationOptions.getAdditionalTranslationFlags());
 }
 
@@ -142,6 +135,7 @@ void TranslationFlagsWidget::createSimulationOptions(SimulationOptions *pSimulat
   pSimulationOptions->setNLSanalyticJacobian(mpNLSanalyticJacobianCheckBox->isChecked());
   pSimulationOptions->setParmodauto(mpParmodautoCheckBox->isChecked());
   pSimulationOptions->setOldInstantiation(mpOldInstantiationCheckBox->isChecked());
+  pSimulationOptions->setEnableFMUImport(mpEnableFMUImportCheckBox->isChecked());
   pSimulationOptions->setAdditionalTranslationFlags(mpAdditionalTranslationFlagsTextBox->text());
 }
 
@@ -186,11 +180,15 @@ QString TranslationFlagsWidget::commandLineOptions()
   }
   // parmodauto
   if (mpParmodautoCheckBox->isChecked()) {
-    debugFlags.append("parmodauto");
+    configFlags.append("--parmodauto");
   }
   // enable new instantiation
   if (mpOldInstantiationCheckBox->isChecked()) {
     debugFlags.append("nonewInst");
+  }
+  // enable FMU Import
+  if (mpEnableFMUImportCheckBox->isChecked()) {
+    configFlags.append("--allowNonStandardModelica=reinitInAlgorithms");
   }
 
   QStringList commandLineOptions;
@@ -207,35 +205,12 @@ QString TranslationFlagsWidget::commandLineOptions()
 }
 
 /*!
- * \brief TranslationFlagsWidget::updateMatchingAlgorithmToolTip
- * Updates the matching algorithm combobox tooltip.
- * \param index
- */
-void TranslationFlagsWidget::updateMatchingAlgorithmToolTip(int index)
-{
-  mpMatchingAlgorithmComboBox->setToolTip(mpMatchingAlgorithmComboBox->itemData(index, Qt::ToolTipRole).toString());
-}
-
-/*!
- * \brief TranslationFlagsWidget::updateIndexReductionToolTip
- * Updates the index reduction combobox tooltip.
- * \param index
- */
-void TranslationFlagsWidget::updateIndexReductionToolTip(int index)
-{
-  mpIndexReductionMethodComboBox->setToolTip(mpIndexReductionMethodComboBox->itemData(index, Qt::ToolTipRole).toString());
-}
-
-/*!
  * \brief TranslationFlagsWidget::showTranslationFlagsHelp
  * Slot activated when mpTranslationFlagsHelpButton clicked signal is raised.\n
  * Opens the omchelptext.html page of OpenModelica users guide.
  */
 void TranslationFlagsWidget::showTranslationFlagsHelp()
 {
-  QUrl omcHelpTextPath (QString("file:///%1/share/doc/omc/OpenModelicaUsersGuide/omchelptext.html").arg(Helper::OpenModelicaHome));
-  if (!QDesktopServices::openUrl(omcHelpTextPath)) {
-    QMessageBox::critical(this, QString("%1 - %2").arg(Helper::applicationName, Helper::error),
-                          GUIMessages::getMessage(GUIMessages::UNABLE_TO_OPEN_FILE).arg(omcHelpTextPath.toString()), Helper::ok);
-  }
+  QUrl omcHelpTextPath(QString("https://openmodelica.org/doc/OpenModelicaUsersGuide/%1/omchelptext.html").arg(Helper::OpenModelicaUsersGuideVersion));
+  QDesktopServices::openUrl(omcHelpTextPath);
 }

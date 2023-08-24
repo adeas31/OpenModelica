@@ -32,20 +32,19 @@ LIBFFI=-lffi
 else # sane systems
 LIBFFI=$(TOP_DIR)/3rdParty/libffi/install/lib*/libffi.a
 endif
-LIBOMCGRAPHSTREAMAR=$(TOP_DIR)/Compiler/runtime/libomcgraphstream.a
 LIBOMCBACKENDRUNTIMEAR=$(TOP_DIR)/Compiler/runtime/libomcbackendruntime.a
 
 ifeq ($(BOOTSTRAP_STAGE_1),1)
 OMCRUNTIMEAR=$(OMCRUNTIMEAR1)
 OMPARSEAR=../../Parser/libomparse-boot.a
 LOMPARSE=$(OMPARSEAR)
-LCOMPILERRUNTIME= $(LIBOMCGRAPHSTREAMAR) $(LIBOMCBACKENDRUNTIMEAR) $(abspath $(OMCRUNTIMEAR)) $(LIBFFI) $(RPATH_BOOT_STAGE_1)
+LCOMPILERRUNTIME= $(LIBOMCBACKENDRUNTIMEAR) $(abspath $(OMCRUNTIMEAR)) $(LIBFFI) $(RPATH_BOOT_STAGE_1)
 FMILIB_OR_BOOT=
 else
 OMCRUNTIMEAR=$(OMCRUNTIMEAR2)
 OMPARSEAR=$(OMHOME)/$(LIB_OMC)/libomparse.a
 LOMPARSE=-lomparse
-LCOMPILERRUNTIME=$(LIBOMCGRAPHSTREAMAR) $(LIBOMCBACKENDRUNTIMEAR) -lomcruntime $(LIBFFI)
+LCOMPILERRUNTIME=$(LIBOMCBACKENDRUNTIMEAR) -lomcruntime $(LIBFFI)
 FMILIB_OR_BOOT=$(FMILIB) -lexpat
 endif
 
@@ -72,6 +71,7 @@ bootstrap-from-tarball2:
 	$(MAKE) -f $(defaultMakefileTarget) --no-print-directory clean OMC="$(BOOTSTRAP_OMC)"
 	$(MAKE) -f $(defaultMakefileTarget) --no-print-directory runtime-depends OMBUILDDIR=$(OMBUILDDIR) OMC="$(BOOTSTRAP_OMC)"
 	OPENMODELICA_BACKEND_STUBS=1 $(MAKE) -f $(defaultMakefileTarget) generate-files-in-steps OMC="$(BOOTSTRAP_OMC)" OMC_EXTRA_FLAGS= TEMPLATES_TARGET=templates-bootstrap
+	cp bootstrap-sources/build/_main.c build/
 	# We have not compiled OpenModelicaScriptingAPI.mo yet
 	touch build/OpenModelicaScriptingAPI.h
 	$(MAKE) -f $(defaultMakefileTarget) install INCLUDESOURCES=1 OMC="$(BOOTSTRAP_OMC)" CPPFLAGS="$(CPPFLAGS) -DOMC_BOOTSTRAPPING_STAGE_2"
@@ -88,7 +88,7 @@ runtime-depends:
 	$(MAKE) -f $(defaultMakefileTarget) -C .. OpenModelicaBootstrappingHeader.h OMBUILDDIR=$(OMBUILDDIR) OMC="$(OMC)"
 	$(MAKE) -f $(defaultMakefileTarget) parser compilerruntime
 parser:
-	$(MAKE) -f $(defaultMakefileTarget) -C ../../Parser install OMBUILDDIR=$(OMBUILDDIR) OMENCRYPTION=$(OMENCRYPTION)
+	$(MAKE) -f $(defaultMakefileTarget) -C ../../Parser install OMBUILDDIR=$(OMBUILDDIR) OM_ENABLE_ENCRYPTION=$(OM_ENABLE_ENCRYPTION)
 compilerruntime:
 	$(MAKE) -f $(defaultMakefileTarget) -C ../runtime install OMBUILDDIR=$(OMBUILDDIR)
 

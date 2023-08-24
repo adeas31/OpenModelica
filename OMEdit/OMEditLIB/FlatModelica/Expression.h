@@ -1,3 +1,32 @@
+/*
+ * This file is part of OpenModelica.
+ *
+ * Copyright (c) 1998-CurrentYear, Open Source Modelica Consortium (OSMC),
+ * c/o Linköpings universitet, Department of Computer and Information Science,
+ * SE-58183 Linköping, Sweden.
+ *
+ * All rights reserved.
+ *
+ * THIS PROGRAM IS PROVIDED UNDER THE TERMS OF GPL VERSION 3 LICENSE OR
+ * THIS OSMC PUBLIC LICENSE (OSMC-PL) VERSION 1.2.
+ * ANY USE, REPRODUCTION OR DISTRIBUTION OF THIS PROGRAM CONSTITUTES RECIPIENT'S ACCEPTANCE
+ * OF THE OSMC PUBLIC LICENSE OR THE GPL VERSION 3, ACCORDING TO RECIPIENTS CHOICE.
+ *
+ * The OpenModelica software and the Open Source Modelica
+ * Consortium (OSMC) Public License (OSMC-PL) are obtained
+ * from OSMC, either from the above address,
+ * from the URLs: http://www.ida.liu.se/projects/OpenModelica or
+ * http://www.openmodelica.org, and in the OpenModelica distribution.
+ * GNU version 3 is obtained from: http://www.gnu.org/copyleft/gpl.html.
+ *
+ * This program is distributed WITHOUT ANY WARRANTY; without
+ * even the implied warranty of  MERCHANTABILITY or FITNESS
+ * FOR A PARTICULAR PURPOSE, EXCEPT AS EXPRESSLY SET FORTH
+ * IN THE BY RECIPIENT SELECTED SUBSIDIARY LICENSE CONDITIONS OF OSMC-PL.
+ *
+ * See the full OSMC Public License conditions for more details.
+ *
+ */
 #ifndef EXPRESSION_H
 #define EXPRESSION_H
 
@@ -8,6 +37,7 @@
 #include <vector>
 
 #include <QString>
+#include <QJsonValue>
 
 namespace FlatModelica
 {
@@ -24,7 +54,7 @@ namespace FlatModelica
    *
    * Using the default constructor will create an Expression that contains no
    * value, the only methods allowed on such Expressions are the isXXX methods
-   * (like isNull()) and assignment operators.
+   * (like isNull()), toString/toQString, and assignment operators.
    *
    * Since Flat Modelica expression contain no type information and the result
    * files only store double values all variables are evaluated to Real
@@ -41,7 +71,7 @@ namespace FlatModelica
   class Expression
   {
     public:
-      using VariableEvaluator = std::function<double(std::string cref_name)>;
+      using VariableEvaluator = std::function<Expression(std::string cref_name)>;
 
     public:
       Expression();
@@ -53,6 +83,7 @@ namespace FlatModelica
       explicit Expression(const QString &value);
       explicit Expression(const char *value);
       explicit Expression(std::vector<Expression> elements);
+      explicit Expression(std::string value, int index);
       explicit Expression(std::unique_ptr<ExpressionBase> value);
 
       ~Expression();
@@ -65,12 +96,16 @@ namespace FlatModelica
       static Expression parse(std::string str);
       static Expression parse(const QString &str);
 
-      Expression evaluate(const VariableEvaluator &var_eval) const;
+      void deserialize(const QJsonValue &value);
+      QJsonValue serialize() const;
+
+      Expression evaluate(const VariableEvaluator &var_eval, int recursion_level = 0) const;
 
       bool isNull() const;
       bool isLiteral() const;
       bool isInteger() const;
       bool isReal() const;
+      bool isEnum() const;
       bool isNumber() const;
       bool isBoolean() const;
       bool isBooleanish() const;
@@ -87,6 +122,10 @@ namespace FlatModelica
       double realValue() const;
       bool boolValue() const;
       std::string stringValue() const;
+      std::string enumValue() const;
+      int enumIndex() const;
+      QString QStringValue() const;
+      QString functionName() const;
 
       std::string toString() const;
       QString toQString() const;
@@ -94,6 +133,7 @@ namespace FlatModelica
       const std::vector<Expression>& elements() const;
       const std::vector<Expression>& args() const;
       const Expression& arg(size_t index) const;
+      void setArg(size_t index, const Expression &e);
 
       Expression& operator+= (const Expression &other);
       Expression& operator-= (const Expression &other);

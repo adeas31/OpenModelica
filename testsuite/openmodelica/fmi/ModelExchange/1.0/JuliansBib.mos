@@ -18,7 +18,7 @@ val(theta,1);
 val(s, 0);
 val(s, 1);
 
-translateModelFMU(JuliansBib.Connector_Hebelarm_einfach, version="1.0"); getErrorString();
+buildModelFMU(JuliansBib.Connector_Hebelarm_einfach, version="1.0"); getErrorString();
 importFMU("JuliansBib_Connector_Hebelarm_einfach.fmu"); getErrorString();
 loadFile("JuliansBib_Connector_Hebelarm_einfach_me_FMU.mo"); getErrorString();
 simulate(JuliansBib_Connector_Hebelarm_einfach_me_FMU, stopTime=1,numberOfIntervals=1000); getErrorString();
@@ -34,25 +34,25 @@ val(s, 1);
 
 // Result:
 // true
-// "Notification: Automatically loaded package Modelica 3.2.1 due to uses annotation.
-// Notification: Automatically loaded package Complex 3.2.1 due to uses annotation.
-// Notification: Automatically loaded package ModelicaServices 3.2.1 due to uses annotation.
+// "Notification: Automatically loaded package Modelica 3.2.1 due to uses annotation from JuliansBib.
+// Notification: Automatically loaded package Complex 3.2.1 due to uses annotation from Modelica.
+// Notification: Automatically loaded package ModelicaServices 3.2.1 due to uses annotation from Modelica.
 // "
 // true
 // ""
 // record SimulationResult
 //     resultFile = "JuliansBib.Connector_Hebelarm_einfach_res.mat",
 //     simulationOptions = "startTime = 0.0, stopTime = 1.0, numberOfIntervals = 500, tolerance = 1e-06, method = 'dassl', fileNamePrefix = 'JuliansBib.Connector_Hebelarm_einfach', options = '', outputFormat = 'mat', variableFilter = '.*', cflags = '', simflags = ''",
-//     messages = "assert            | warning | The following assertion has been violated at time 0.000000
+//     messages = "LOG_ASSERT        | warning | The following assertion has been violated at time 0.000000
 // |                 | |       | lever_arm_simple_2D1.ausleger1.fixedTranslation.r0[1] >= 0.0
-// assert            | warning | Variable violating min constraint: 0.0 <= lever_arm_simple_2D1.ausleger1.fixedTranslation.r0[1], has value: -1.41144
-// assert            | warning | The following assertion has been violated at time 0.000000
+// LOG_ASSERT        | warning | Variable violating min constraint: 0.0 <= lever_arm_simple_2D1.ausleger1.fixedTranslation.r0[1], has value: -1.41144
+// LOG_ASSERT        | warning | The following assertion has been violated at time 0.000000
 // |                 | |       | lever_arm_simple_2D1.ausleger1.fixedTranslation.r0[2] >= 0.0
-// assert            | warning | Variable violating min constraint: 0.0 <= lever_arm_simple_2D1.ausleger1.fixedTranslation.r0[2], has value: -0.0885622
+// LOG_ASSERT        | warning | Variable violating min constraint: 0.0 <= lever_arm_simple_2D1.ausleger1.fixedTranslation.r0[2], has value: -0.0885622
 // LOG_SUCCESS       | info    | The initialization finished successfully without homotopy method.
-// assert            | warning | The following assertion has been violated at time 0.002000
+// LOG_ASSERT        | warning | The following assertion has been violated at time 0.002000
 // |                 | |       | lever_arm_simple_2D1.ausleger1.actuatedPrismatic1.s >= 0.0
-// assert            | warning | Variable violating min constraint: 0.0 <= lever_arm_simple_2D1.ausleger1.actuatedPrismatic1.s, has value: -3.60059e-06
+// LOG_ASSERT        | warning | Variable violating min constraint: 0.0 <= lever_arm_simple_2D1.ausleger1.actuatedPrismatic1.s, has value: -3.60059e-06
 // LOG_SUCCESS       | info    | The simulation finished successfully.
 // "
 // end SimulationResult;
@@ -74,12 +74,12 @@ val(s, 1);
 // record SimulationResult
 //     resultFile = "JuliansBib_Connector_Hebelarm_einfach_me_FMU_res.mat",
 //     simulationOptions = "startTime = 0.0, stopTime = 1.0, numberOfIntervals = 1000, tolerance = 1e-06, method = 'dassl', fileNamePrefix = 'JuliansBib_Connector_Hebelarm_einfach_me_FMU', options = '', outputFormat = 'mat', variableFilter = '.*', cflags = '', simflags = ''",
-//     messages = "assert            | warning | The following assertion has been violated at time 0.000000
+//     messages = "LOG_ASSERT        | warning | The following assertion has been violated at time 0.000000
 // |                 | |       | lever_arm_simple_2D1.ausleger1.fixedTranslation.r0[1] >= 0.0
-// assert            | warning | Variable violating min constraint: 0.0 <= lever_arm_simple_2D1.ausleger1.fixedTranslation.r0[1], has value: -1.41144
-// assert            | warning | The following assertion has been violated at time 0.000000
+// LOG_ASSERT        | warning | Variable violating min constraint: 0.0 <= lever_arm_simple_2D1.ausleger1.fixedTranslation.r0[1], has value: -1.41144
+// LOG_ASSERT        | warning | The following assertion has been violated at time 0.000000
 // |                 | |       | lever_arm_simple_2D1.ausleger1.fixedTranslation.r0[2] >= 0.0
-// assert            | warning | Variable violating min constraint: 0.0 <= lever_arm_simple_2D1.ausleger1.fixedTranslation.r0[2], has value: -0.0885622
+// LOG_ASSERT        | warning | Variable violating min constraint: 0.0 <= lever_arm_simple_2D1.ausleger1.fixedTranslation.r0[2], has value: -0.0885622
 // LOG_SUCCESS       | info    | The initialization finished successfully without homotopy method.
 // LOG_SUCCESS       | info    | The simulation finished successfully.
 // "

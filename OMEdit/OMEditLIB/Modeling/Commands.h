@@ -107,7 +107,7 @@ private:
 class UpdateComponentTransformationsCommand : public UndoCommand
 {
 public:
-  UpdateComponentTransformationsCommand(Element *pComponent, const Transformation &oldTransformation, const Transformation &newTransformation,
+  UpdateComponentTransformationsCommand(Element *pComponent, Transformation oldTransformation, Transformation newTransformation,
                                         const bool positionChanged, const bool moveConnectorsTogether, UndoCommand *pParent = 0);
   void redoInternal();
   void undo();
@@ -119,10 +119,10 @@ private:
   bool mMoveConnectorsTogether;
 };
 
-class UpdateComponentAttributesCommand : public UndoCommand
+class UpdateElementAttributesCommand : public UndoCommand
 {
 public:
-  UpdateComponentAttributesCommand(Element *pComponent, const ElementInfo &oldComponentInfo, const ElementInfo &newComponentInfo, UndoCommand *pParent = 0);
+  UpdateElementAttributesCommand(Element *pComponent, const ElementInfo &oldComponentInfo, const ElementInfo &newComponentInfo, UndoCommand *pParent = 0);
   void redoInternal();
   void undo();
   static void updateComponentAttributes(Element *pComponent, const ElementInfo &componentInfo);
@@ -133,10 +133,10 @@ private:
   ElementInfo mNewComponentInfo;
 };
 
-class UpdateComponentParametersCommand : public UndoCommand
+class UpdateElementParametersCommand : public UndoCommand
 {
 public:
-  UpdateComponentParametersCommand(Element *pComponent, QMap<QString, QString> oldComponentModifiersMap,
+  UpdateElementParametersCommand(Element *pComponent, QMap<QString, QString> oldComponentModifiersMap,
                                    QMap<QString, QString> oldComponentExtendsModifiersMap, QMap<QString, QString> newComponentModifiersMap,
                                    QMap<QString, QString> newComponentExtendsModifiersMap, UndoCommand *pParent = 0);
   void redoInternal();
@@ -424,6 +424,21 @@ private:
 
   void restoreClosedModelWidgets();
   void switchToEditedModelWidget();
+};
+
+class OMCUndoCommand : public UndoCommand
+{
+public:
+  OMCUndoCommand(LibraryTreeItem *pLibraryTreeItem, const ModelInfo &oldModelInfo, const ModelInfo &newModelInfo, const QString &commandText, UndoCommand *pParent = 0);
+  void redoInternal();
+  void undo();
+private:
+  LibraryTreeItem *mpLibraryTreeItem;
+  QString mOldModelText;
+  ModelInfo mOldModelInfo;
+  QString mNewModelText;
+  ModelInfo mNewModelInfo;
+  bool mUndoDoneOnce;
 };
 
 #endif // COMMANDS_H

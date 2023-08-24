@@ -121,7 +121,7 @@ public constant ElementSource emptyElementSource = SOURCE(AbsynUtil.dummyInfo,{}
 
 public uniontype SymbolicOperation
   record FLATTEN "From one equation/statement to an element"
-    SCode.EEquation scode;
+    SCode.Equation scode;
     Option<Element> dae;
   end FLATTEN;
   record SIMPLIFY "Before and after expression is equivalent"
@@ -268,6 +268,16 @@ public uniontype Element
     Option<Element> elsewhen_ "Elsewhen should be of type WHEN_EQUATION" ;
     ElementSource source "the origin of the component/equation/algorithm" ;
   end WHEN_EQUATION;
+
+  record INITIAL_FOR_EQUATION " an initial for-equation"
+    Type type_ "this is the type of the iterator";
+    Boolean iterIsArray "True if the iterator has an array type, otherwise false.";
+    Ident iter "the iterator variable";
+    Integer index "the index of the iterator variable, to make it unique; used by the new inst";
+    Exp range "range for the loop";
+    list<Element> equations "Equations" ;
+    ElementSource source "the origin of the component/equation/algorithm" ;
+  end INITIAL_FOR_EQUATION;
 
   record FOR_EQUATION " a for-equation"
     Type type_ "this is the type of the iterator";
@@ -460,6 +470,11 @@ public uniontype FunctionDefinition
     ComponentRef inputParam "The input parameter the inverse is for";
     Exp inverseCall "The inverse function call";
   end FUNCTION_INVERSE;
+
+  record FUNCTION_PARTIAL_DERIVATIVE
+    Absyn.Path derivedFunction;
+    list<String> derivedVars;
+  end FUNCTION_PARTIAL_DERIVATIVE;
 end FunctionDefinition;
 
 public
@@ -555,6 +570,7 @@ public uniontype Uncertainty
   record GIVEN end GIVEN;
   record SOUGHT end SOUGHT;
   record REFINE end REFINE;
+  record PROPAGATE end PROPAGATE;
 end Uncertainty;
 
 public uniontype Distribution
@@ -706,7 +722,6 @@ uniontype Statement "There are four kinds of statements:
     Type type_ "this is the type of the iterator";
     Boolean iterIsArray "True if the iterator has an array type, otherwise false.";
     Ident iter "the iterator variable";
-    Integer index "the index of the iterator variable, to make it unique; used by the new inst";
     Exp range "range for the loop";
     list<Statement> statementLst;
     ElementSource source "the origin of the component/equation/algorithm" ;
@@ -716,7 +731,6 @@ uniontype Statement "There are four kinds of statements:
     Type type_ "this is the type of the iterator";
     Boolean iterIsArray "True if the iterator has an array type, otherwise false.";
     Ident iter "the iterator variable";
-    Integer index "the index of the iterator variable, to make it unique; used by the new inst";
     Exp range "range for the loop";
     list<Statement> statementLst;
     list<tuple<ComponentRef,SourceInfo>> loopPrlVars "list of parallel variables used/referenced in the parfor loop";
@@ -886,8 +900,8 @@ constant Type T_ANYTYPE_DEFAULT     = T_ANYTYPE(NONE());
 constant Type T_UNKNOWN_DEFAULT     = T_UNKNOWN();
 constant Type T_NORETCALL_DEFAULT   = T_NORETCALL();
 constant Type T_METATYPE_DEFAULT    = T_METATYPE(T_UNKNOWN_DEFAULT);
-constant Type T_COMPLEX_DEFAULT     = T_COMPLEX(ClassInf.UNKNOWN(Absyn.IDENT("")), {}, NONE()) "default complex with unknown CiState";
-constant Type T_COMPLEX_DEFAULT_RECORD = T_COMPLEX(ClassInf.RECORD(Absyn.IDENT("")), {}, NONE()) "default complex with record CiState";
+constant Type T_COMPLEX_DEFAULT     = T_COMPLEX(ClassInf.UNKNOWN(Absyn.IDENT("")), {}, NONE(), false) "default complex with unknown CiState";
+constant Type T_COMPLEX_DEFAULT_RECORD = T_COMPLEX(ClassInf.RECORD(Absyn.IDENT("")), {}, NONE(), false) "default complex with record CiState";
 
 constant Type T_SOURCEINFO_DEFAULT_METARECORD = T_METARECORD(Absyn.QUALIFIED("SourceInfo",Absyn.IDENT("SOURCEINFO")), Absyn.IDENT("SourceInfo"), {}, 1, {
     TYPES_VAR("fileName", dummyAttrVar, T_STRING_DEFAULT, UNBOUND(), false, NONE()),
@@ -956,6 +970,7 @@ public uniontype Type "models the different front-end and back-end types"
     ClassInf.State complexClassType "The type of a class";
     list<Var> varLst "The variables of a complex type";
     EqualityConstraint equalityConstraint;
+    Boolean usedExternally "If the record is passed to an external function at any point, we need to generate conversion functions for it (for instance to convert 'modelica_integer' to 'int')";
   end T_COMPLEX;
 
   record T_SUBTYPE_BASIC
@@ -1283,22 +1298,22 @@ uniontype ClockKind
   record INFERRED_CLOCK
   end INFERRED_CLOCK;
 
-  record INTEGER_CLOCK
-    Exp intervalCounter;
-    Exp resolution " integer type >= 1 ";
-  end INTEGER_CLOCK;
+  record RATIONAL_CLOCK
+    Exp intervalCounter " integer type >= 0 ";
+    Exp resolution " integer type >= 1, defaults to 1 ";
+  end RATIONAL_CLOCK;
 
   record REAL_CLOCK
-    Exp interval;
+    Exp interval " real type > 0 ";
   end REAL_CLOCK;
 
-  record BOOLEAN_CLOCK
+  record EVENT_CLOCK
     Exp condition;
     Exp startInterval " real type >= 0.0 ";
-  end BOOLEAN_CLOCK;
+  end EVENT_CLOCK;
 
   record SOLVER_CLOCK
-    Exp c;
+    Exp c " clock type ";
     Exp solverMethod " string type ";
   end SOLVER_CLOCK;
 end ClockKind;
@@ -1809,7 +1824,8 @@ end Operator;
 public
 uniontype ComponentRef "- Component references
     CREF_QUAL(...) is used for qualified component names, e.g. a.b.c
-    CREF_IDENT(..) is used for non-qualifed component names, e.g. x"
+    CREF_IDENT(..) is used for non-qualifed component names, e.g. x
+    Outermost CREF_QUAL(...) is leftmost name. e.g. CREF_QUAL(a, CREF_IDENT(b)) -> a.b"
 
   record CREF_QUAL
     Ident ident;
@@ -1823,13 +1839,6 @@ uniontype ComponentRef "- Component references
     Type identType "type of the identifier, without considering the subscripts";
     list<Subscript> subscriptLst;
   end CREF_IDENT;
-
-  record CREF_ITER "An iterator index; used in local scopes in for-loops and reductions"
-    Ident ident;
-    Integer index;
-    Type identType "type of the identifier, without considering the subscripts";
-    list<Subscript> subscriptLst;
-  end CREF_ITER;
 
   record OPTIMICA_ATTR_INST_CREF "An Optimica component reference with the time instant in it. e.g x2(finalTime)"
     ComponentRef componentRef;

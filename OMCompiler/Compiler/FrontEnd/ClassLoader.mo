@@ -143,10 +143,31 @@ protected
   String mp, name, pwd, cmd, version, userLibraries;
   Boolean isDir, impactOK;
   Option<Absyn.Class> cl;
-  list<String> versionsThatProvideTheWanted, commands;
+  list<String> versionsThatProvideTheWanted, commands, versions;
 algorithm
+  if not requireExactVersion then
+    if listEmpty(prios) then
+      versions := PackageManagement.versionsThatProvideTheWanted(id, "default", printError = false);
+    else
+      versions := {};
+
+      for v in listReverse(prios) loop
+        versionsThatProvideTheWanted :=
+          PackageManagement.versionsThatProvideTheWanted(id, v, printError = false);
+
+        if listEmpty(versionsThatProvideTheWanted) then
+          versions := v :: versions;
+        else
+          versions := listAppend(versionsThatProvideTheWanted, versions);
+        end if;
+      end for;
+    end if;
+  else
+    versions := prios;
+  end if;
+
   try
-    (mp,name,isDir) := System.getLoadModelPath(id,prios,mps,requireExactVersion);
+    (mp,name,isDir) := System.getLoadModelPath(id,versions,mps,requireExactVersion);
   else
     version := match prios
       case version::_ then version;
@@ -219,6 +240,7 @@ algorithm
         if encrypted then
           (lveStarted, lveInstance) = Parser.startLibraryVendorExecutable(path + pd + name);
           if not lveStarted then
+            Error.addMessage(Error.INTERNAL_ERROR, {"Unable to start library vendor executable."});
             fail();
           end if;
         end if;
@@ -299,12 +321,13 @@ algorithm
         opt_cl = parsePackageFile(packagefile, strategy, true, within_, id, encrypted);
         // print("Got " + packagefile + "\n");
         if (isSome(opt_cl)) then
-          (class_ as Absyn.CLASS(name,pp,fp,ep,r,Absyn.PARTS(tv,ca,cp,ann,cmt),info)) = Util.getOption(opt_cl);
+          (class_ as Absyn.CLASS(body=Absyn.PARTS(tv,ca,cp,ann,cmt))) = Util.getOption(opt_cl);
           reverseOrder = getPackageContentNames(class_, orderfile, mp_1, Error.getNumErrorMessages(), encrypted);
           path = AbsynUtil.joinWithinPath(within_,Absyn.IDENT(id));
           w2 = Absyn.WITHIN(path);
           cp = List.fold4(reverseOrder, loadCompletePackageFromMp2, mp_1, strategy, w2, encrypted, {});
-          opt_cl = SOME(Absyn.CLASS(name,pp,fp,ep,r,Absyn.PARTS(tv,ca,cp,ann,cmt),info));
+          class_.body = Absyn.PARTS(tv,ca,cp,ann,cmt);
+          opt_cl = SOME(class_);
         end if;
       then opt_cl;
     case (_,pack,mp,_)
@@ -772,15 +795,24 @@ function getProgramFromStrategy
   input String filename;
   input LoadFileStrategy strategy;
   output Absyn.Program program;
+protected
+  String f = filename;
 algorithm
   program := match strategy
     case STRATEGY_HASHTABLE()
-      equation
-        /* if not BaseHashTable.hasKey(filename, strategy.ht) then
-          Error.addInternalError("HashTable missing file " + filename + " - all entries include:\n" + stringDelimitList(BaseHashTable.hashTableKeyList(ht), "\n"), sourceInfo());
-          fail();
-        end if; */
-      then BaseHashTable.get(filename, strategy.ht);
+      algorithm
+        if not BaseHashTable.hasKey(filename, strategy.ht) then
+          // it might NOT be in the hashtable because of case issues, check that!
+          try
+            f := List.getMemberOnTrue(filename, BaseHashTable.hashTableKeyList(strategy.ht), Util.stringEqCaseInsensitive);
+            // adrpo: not needed, a warning is given earlier about the case of the file vs the class
+            //        Error.addSourceMessage(Error.COMPILER_WARNING, {"HashTable has entry for file:\n" + filename + "\nwith a different case:\n" + f + "\ncontinue ...\n"}, sourceInfo());
+          else
+            Error.addInternalError("HashTable missing file: " + filename + " - all entries include:\n" + stringDelimitList(BaseHashTable.hashTableKeyList(strategy.ht), "\n"), sourceInfo());
+            fail();
+          end try;
+        end if;
+      then BaseHashTable.get(f, strategy.ht);
     case STRATEGY_ON_DEMAND() then Parser.parse(filename, strategy.encoding);
   end match;
 end getProgramFromStrategy;

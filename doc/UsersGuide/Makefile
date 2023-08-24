@@ -1,9 +1,15 @@
 # Makefile for Sphinx documentation
 #
 
-OPENMODELICA_ROOT = $(CURDIR)/../../
+OPENMODELICA_ROOT = $(CURDIR)/../..
 # OMPython needs this
-OPENMODELICAHOME := $(OPENMODELICA_ROOT)/build/
+OPENMODELICAHOME := $(shell                                 \
+	if [ -d $(OPENMODELICA_ROOT)/build_cmake/install ];       \
+		then echo '$(OPENMODELICA_ROOT)/build_cmake/install';   \
+	elif [ -d $(OPENMODELICA_ROOT)/install_cmake ];           \
+		then echo '$(OPENMODELICA_ROOT)/install_cmake';         \
+	else                                                      \
+		echo '$(OPENMODELICA_ROOT)/build/'; fi)
 
 OMSUSERSGUIDE = $(OPENMODELICA_ROOT)/OMSimulator/doc/UsersGuide
 
@@ -60,6 +66,7 @@ help:
 
 clean:
 	rm -rf $(BUILDDIR)/*
+	git clean -fX source/
 
 html: all-dep
 	$(SPHINXBUILD) -b html -t nomathjax $(ALLSPHINXOPTS) $(BUILDDIR)/html
@@ -232,7 +239,7 @@ source/openmodelica.bib: resolve-crossref.py ../bibliography/openmodelica.bib
 	./resolve-crossref.py "../bibliography/openmodelica.bib" source/openmodelica.bib
 source/interface.inc: interface.mos
 	@mkdir -p tmp
-	$(OPENMODELICA_ROOT)/build/bin/omc -g=MetaModelica -d=nogen interface.mos
+	$(OPENMODELICAHOME)/bin/omc -g=MetaModelica -d=nogen interface.mos
 	mv interface.inc $@
 
 OMEDIT_ICONS_BASE=connect-mode.svg transition-mode.svg parametric-plot-window.svg plot-window.svg array-parametric-plot-window.svg array-plot-window.svg re-simulate.svg tlm-simulate.svg interface-data.svg simulation-parameters.svg
@@ -244,7 +251,7 @@ OMEDIT_ICONS=$(OMEDIT_ICONS_SVG) $(OMEDIT_ICONS_PNG) $(OMEDIT_ICONS_PDF)
 OMOPTIM_ICONS_BASE=Add.png
 OMOPTIM_ICONS=$(OMOPTIM_ICONS_BASE:%=source/media/omoptim-icons/%)
 
-all-dep: $(ALLDEP) source/media/mathematica-notebooks.pdf source/media/mdt-create-project.pdf source/media/mdt-build-prompt.pdf source/simoptions.inc source/omchelptext.rst source/tracreleases.rst
+all-dep: $(ALLDEP) source/media/mathematica-notebooks.pdf source/media/mdt-create-project.pdf source/media/mdt-build-prompt.pdf source/simoptions.inc source/omchelptext.rst source/githubreleases.rst source/tracreleases.inc
 
 source/media/omedit-icons/%.svg: $(OPENMODELICA_ROOT)/OMEdit/OMEditLIB/Resources/icons/%.svg
 	@mkdir -p source/media/omedit-icons
@@ -254,7 +261,6 @@ source/media/omedit-icons/%.png: source/media/omedit-icons/%.svg
 	inkscape "$<" --export-png="$@"
 source/media/omedit-icons/%.pdf: source/media/omedit-icons/%.svg
 	inkscape "$<" --export-pdf="$@"
-
 source/media/omoptim-icons/%.png: $(OPENMODELICA_ROOT)/OMOptim/OMOptim/GUI/Resources/icons/%.png
 	@mkdir -p source/media/omoptim-icons
 	cp -a "$<" "$@"
@@ -265,13 +271,11 @@ readme: readme/sphinxcontribopenmodelica.py
 	ln -sf ../source/aplot.svg readme
 	sphinx-build -b html -t nomathjax -d build/readme/doctrees readme build/readme/html
 source/simoptions.inc:
-	$(OPENMODELICA_ROOT)/build/bin/omc +help=simulation-sphinxoutput > "$@.tmp"
+	$(OPENMODELICAHOME)/bin/omc +help=simulation-sphinxoutput > "$@.tmp"
 	mv "$@.tmp" "$@"
 source/omchelptext.rst:
-	$(OPENMODELICA_ROOT)/build/bin/omc +help=omcall-sphinxoutput > "$@.tmp"
+	$(OPENMODELICAHOME)/bin/omc +help=omcall-sphinxoutput > "$@.tmp"
 	mv "$@.tmp" "$@"
-source/tracreleases.rst: source/tracreleases.py
-	cd source && ./tracreleases.py
 source/omsimulator-help.inc:
 	$(OPENMODELICAHOME)/bin/OMSimulator --help > "$@.tmp"
 	mv "$@.tmp" "$@"
@@ -281,3 +285,5 @@ omsimulatorstuff:
 	$(MAKE) $(OMSUSERSGUIDE)/source/OMSimulatorPython.inc source/omsimulator-help.inc
 	test -e source/omsimulator || ln -s "$(OMSUSERSGUIDE)/source" "source/omsimulator"
 	for f in api images OMCScripting.inc OMSimulatorLib.inc OMSimulatorLua.inc OMSimulatorPython.inc releaselink.inc; do test -e "source/$$f" || ln -s "$(OMSUSERSGUIDE)/source/$$f" "source/$$f"; done
+source/githubreleases.rst: source/githubreleases.py
+	(cd source && python3 githubreleases.py)

@@ -31,47 +31,28 @@
 
 encapsulated uniontype JSON
 
-import BaseAvlTree;
 import LexerJSON;
 import LexerJSON.{Token,TokenId,tokenContent,printToken,tokenSourceInfo};
+import Vector;
+import UnorderedMap;
 
 protected
 
 import Error;
 import MetaModelica.Dangerous.listReverseInPlace;
+import Util;
+import Print;
 
 public
 
-encapsulated package AvlTree "AvlTree for String to String"
-  import BaseAvlTree;
-  import JSON;
-  extends BaseAvlTree;
-  redeclare type Key = String;
-  redeclare type Value = JSON;
-  redeclare function extends keyStr
-  algorithm
-    outString := inKey;
-  end keyStr;
-  redeclare function extends valueStr
-  algorithm
-    outString := JSON.toString(inValue);
-  end valueStr;
-  redeclare function extends keyCompare
-  algorithm
-    outResult := stringCompare(inKey1, inKey2);
-  end keyCompare;
-annotation(__OpenModelica_Interface="util");
-end AvlTree;
-
-type Dict = JSON.AvlTree.Tree;
-
 record OBJECT
-  list<String> orderedKeys;
-  list<JSON> orderedValues;
-  Dict dict;
+  UnorderedMap<String, JSON> values;
 end OBJECT;
+record LIST_OBJECT
+  list<tuple<String, JSON>> values;
+end LIST_OBJECT;
 record ARRAY
-  list<JSON> values;
+  Vector<JSON> values;
 end ARRAY;
 record STRING
   String str;
@@ -92,25 +73,414 @@ end NULL;
 function emptyObject
   output JSON obj;
 algorithm
-  obj := OBJECT({},{},AvlTree.EMPTY());
+  obj := OBJECT(UnorderedMap.new<JSON>(stringHashDjb2, stringEq));
 end emptyObject;
+
+function emptyListObject
+  output JSON obj = LIST_OBJECT({});
+end emptyListObject;
+
+function fromPair
+  input String key;
+  input JSON value;
+  output JSON obj;
+algorithm
+  obj := emptyObject();
+  obj := addPair(key, value, obj);
+end fromPair;
+
+function emptyArray
+  input Integer capacity = 0;
+  output JSON obj = ARRAY(Vector.new<JSON>(capacity));
+end emptyArray;
+
+function makeArray
+  input list<JSON> elements;
+  output JSON obj = ARRAY(Vector.fromList(elements));
+end makeArray;
+
+function makeString
+  input String str;
+  output JSON obj = STRING(str);
+end makeString;
+
+function makeInteger
+  input Integer i;
+  output JSON obj = INTEGER(i);
+end makeInteger;
+
+function makeNumber
+  input Real r;
+  output JSON obj = NUMBER(r);
+end makeNumber;
+
+function makeBoolean
+  input Boolean b;
+  output JSON obj = if b then TRUE() else FALSE();
+end makeBoolean;
+
+function makeNull
+  output JSON obj = NULL();
+end makeNull;
+
+function isNull
+  input JSON obj;
+  output Boolean res;
+algorithm
+  res := match obj
+    case NULL() then true;
+    else false;
+  end match;
+end isNull;
+
+function addElement
+  "Adds a value at the end of a JSON array, or returns a new array with the
+   given value if the JSON is null."
+  input JSON value;
+  input JSON obj;
+  output JSON outObj;
+algorithm
+  outObj := match obj
+    case ARRAY()
+      algorithm
+        Vector.push(obj.values, value);
+      then
+        obj;
+
+    case NULL()
+      then addElement(value, emptyArray());
+  end match;
+end addElement;
+
+function addElementNotNull
+  input JSON value;
+  input JSON obj;
+  output JSON outObj;
+algorithm
+  outObj := if isNull(value) then obj else addElement(value, obj);
+end addElementNotNull;
+
+function addPair
+  "Adds a key-value pair to a JSON object, or returns a new object with the
+   key-value pair if the JSON is null."
+  input String key;
+  input JSON value;
+  input JSON obj;
+  output JSON outObj;
+algorithm
+  outObj := match obj
+    case OBJECT()
+      algorithm
+        UnorderedMap.add(key, value, obj.values);
+      then
+        obj;
+
+    case LIST_OBJECT()
+      then LIST_OBJECT((key, value) :: obj.values);
+
+    case NULL()
+      then addPair(key, value, emptyListObject());
+  end match;
+end addPair;
+
+function addPairNotNull
+  "Adds a key-value pair to a JSON object if the value is not null."
+  input String key;
+  input JSON value;
+  input JSON obj;
+  output JSON outObj;
+algorithm
+  outObj := if isNull(value) then obj else addPair(key, value, obj);
+end addPairNotNull;
 
 function toString
   input JSON value;
+  input Boolean prettyPrint = false;
   output String str;
+protected
+  Integer handle;
 algorithm
-  str := match value
-    case STRING() then "\""+System.escapedString(value.str,true)+"\"";
-    case TRUE() then "true";
-    case FALSE() then "false";
-    case NULL() then "null";
-    case INTEGER() then String(value.i);
-    case NUMBER() then String(value.r);
-    case ARRAY() then "["+stringDelimitList(list(toString(v) for v in value.values), ", ")+"]";
-    case OBJECT() then "{"+stringDelimitList(list("\""+System.escapedString(k,true)+"\":"+toString(v) threaded for k in value.orderedKeys, v in value.orderedValues), ", ")+"}";
-    else anyString(value);
-  end match;
+  handle := Print.saveAndClearBuf();
+
+  if prettyPrint then
+    toStringPP_work(value);
+  else
+    toString_work(value);
+  end if;
+
+  str := Print.getString();
+  Print.restoreBuf(handle);
 end toString;
+
+function toString_work
+  input JSON value;
+algorithm
+  () := match value
+    case STRING()
+      algorithm
+        Print.printBuf("\"");
+        Print.printBuf(System.escapedString(value.str, true));
+        Print.printBuf("\"");
+      then
+        ();
+
+    case TRUE()
+      algorithm
+        Print.printBuf("true");
+      then
+        ();
+
+    case FALSE()
+      algorithm
+        Print.printBuf("false");
+      then
+        ();
+
+    case NULL()
+      algorithm
+        Print.printBuf("null");
+      then
+        ();
+
+    case INTEGER()
+      algorithm
+        Print.printBuf(String(value.i));
+      then
+        ();
+
+    case NUMBER()
+      algorithm
+        Print.printBuf(String(value.r));
+      then
+        ();
+
+    case ARRAY()
+      algorithm
+        toString_array(value.values);
+      then
+        ();
+
+    case OBJECT()
+      algorithm
+        toString_object(value.values);
+      then
+        ();
+
+    case LIST_OBJECT()
+      algorithm
+        toString_listObject(value.values);
+      then
+        ();
+
+    else ();
+  end match;
+end toString_work;
+
+function toString_array
+  input Vector<JSON> values;
+algorithm
+  Print.printBuf("[");
+
+  for i in 1:Vector.size(values) loop
+    if i <> 1 then
+      Print.printBuf(", ");
+    end if;
+
+    toString_work(Vector.getNoBounds(values, i));
+  end for;
+
+  Print.printBuf("]");
+end toString_array;
+
+function toString_object
+  input UnorderedMap<String, JSON> map;
+algorithm
+  Print.printBuf("{");
+
+  for i in 1:UnorderedMap.size(map) loop
+    if i <> 1 then
+      Print.printBuf(", ");
+    end if;
+
+    Print.printBuf("\"");
+    Print.printBuf(UnorderedMap.keyAt(map, i));
+    Print.printBuf("\":");
+    toString_work(UnorderedMap.valueAt(map, i));
+  end for;
+
+  Print.printBuf("}");
+end toString_object;
+
+function toString_listObject
+  input list<tuple<String, JSON>> object;
+protected
+  Boolean first = true;
+  String key;
+  JSON value;
+algorithm
+  Print.printBuf("{");
+
+  for entry in listReverse(object) loop
+    (key, value) := entry;
+
+    if first then
+      first := false;
+    else
+      Print.printBuf(", ");
+    end if;
+
+    Print.printBuf("\"");
+    Print.printBuf(key);
+    Print.printBuf("\":");
+    toString_work(value);
+  end for;
+
+  Print.printBuf("}");
+end toString_listObject;
+
+function toStringPP_work
+  input JSON value;
+  input String indent = "";
+algorithm
+  () := match value
+    case STRING()
+      algorithm
+        Print.printBuf("\"");
+        Print.printBuf(System.escapedString(value.str, true));
+        Print.printBuf("\"");
+      then
+        ();
+
+    case TRUE()
+      algorithm
+        Print.printBuf("true");
+      then
+        ();
+
+    case FALSE()
+      algorithm
+        Print.printBuf("false");
+      then
+        ();
+
+    case NULL()
+      algorithm
+        Print.printBuf("null");
+      then
+        ();
+
+    case INTEGER()
+      algorithm
+        Print.printBuf(String(value.i));
+      then
+        ();
+
+    case NUMBER()
+      algorithm
+        Print.printBuf(String(value.r));
+      then
+        ();
+
+    case ARRAY()
+      algorithm
+        toStringPP_array(value.values, indent);
+      then
+        ();
+
+    case OBJECT()
+      algorithm
+        toStringPP_object(value.values, indent);
+      then
+        ();
+
+    case LIST_OBJECT()
+      algorithm
+        toStringPP_listObject(value.values, indent);
+      then
+        ();
+
+    else ();
+  end match;
+end toStringPP_work;
+
+function toStringPP_array
+  input Vector<JSON> values;
+  input String indent;
+protected
+  String next_indent = indent + "  ";
+algorithm
+  Print.printBuf("[\n");
+
+  for i in 1:Vector.size(values) loop
+    if i <> 1 then
+      Print.printBuf(",\n");
+    end if;
+
+    Print.printBuf(next_indent);
+    toStringPP_work(Vector.getNoBounds(values, i), next_indent);
+  end for;
+
+  Print.printBuf("\n");
+  Print.printBuf(indent);
+  Print.printBuf("]");
+end toStringPP_array;
+
+function toStringPP_object
+  input UnorderedMap<String, JSON> map;
+  input String indent;
+protected
+  String next_indent = indent + "  ";
+algorithm
+  Print.printBuf("{\n");
+
+  for i in 1:UnorderedMap.size(map) loop
+    if i <> 1 then
+      Print.printBuf(",\n");
+    end if;
+
+    Print.printBuf(next_indent);
+    Print.printBuf("\"");
+    Print.printBuf(UnorderedMap.keyAt(map, i));
+    Print.printBuf("\": ");
+    toStringPP_work(UnorderedMap.valueAt(map, i), next_indent);
+  end for;
+
+  Print.printBuf("\n");
+  Print.printBuf(indent);
+  Print.printBuf("}");
+end toStringPP_object;
+
+function toStringPP_listObject
+  input list<tuple<String, JSON>> object;
+  input String indent;
+protected
+  Boolean first = true;
+  String key;
+  JSON value;
+  String next_indent = indent + "  ";
+algorithm
+  Print.printBuf("{\n");
+
+  for entry in listReverse(object) loop
+    (key, value) := entry;
+
+    if first then
+      first := false;
+    else
+      Print.printBuf(",\n");
+    end if;
+
+    Print.printBuf(next_indent);
+    Print.printBuf("\"");
+    Print.printBuf(key);
+    Print.printBuf("\": ");
+    toStringPP_work(value, next_indent);
+  end for;
+
+  Print.printBuf("\n");
+  Print.printBuf(indent);
+  Print.printBuf("}");
+end toStringPP_listObject;
 
 partial function partialParser
   input list<Token> inTokens;
@@ -137,7 +507,17 @@ function hasKey
   output Boolean b;
 algorithm
   b := match obj
-    case OBJECT() then AvlTree.hasKey(obj.dict, str);
+    case OBJECT() then UnorderedMap.contains(str, obj.values);
+    case LIST_OBJECT()
+      algorithm
+        b := false;
+        for entry in obj.values loop
+          if Util.tuple21(entry) == str then
+            b := true;
+          end if;
+        end for;
+      then
+        b;
   end match;
 end hasKey;
 
@@ -147,7 +527,17 @@ function get
   output JSON out;
 algorithm
   out := match obj
-    case OBJECT() then AvlTree.get(obj.dict, str);
+    case OBJECT() then UnorderedMap.getOrFail(str, obj.values);
+    case LIST_OBJECT()
+      algorithm
+        for entry in obj.values loop
+          if Util.tuple21(entry) == str then
+            out := Util.tuple22(entry);
+            return;
+          end if;
+        end for;
+      then
+        fail();
   end match;
 end get;
 
@@ -157,11 +547,31 @@ function getOrDefault
   input JSON default;
   output JSON out;
 algorithm
-  out := matchcontinue obj
-    case OBJECT() then AvlTree.get(obj.dict, str);
+  out := match obj
+    case OBJECT() then UnorderedMap.getOrDefault(str, obj.values, default);
+    case LIST_OBJECT()
+      algorithm
+        for entry in obj.values loop
+          if Util.tuple21(entry) == str then
+            out := Util.tuple22(entry);
+            return;
+          end if;
+        end for;
+      then
+        default;
     else default;
-  end matchcontinue;
+  end match;
 end getOrDefault;
+
+function at
+  input JSON obj;
+  input Integer index;
+  output JSON out;
+algorithm
+  out := match obj
+    case ARRAY() then Vector.get(obj.values, index);
+  end match;
+end at;
 
 function getString
   input JSON obj;
@@ -169,6 +579,27 @@ function getString
 algorithm
   JSON.STRING(str) := obj;
 end getString;
+
+function getStringList
+  input JSON obj;
+  output list<String> strl;
+algorithm
+  strl := match obj
+    case OBJECT() then list(getString(v) for v in UnorderedMap.valueList(obj.values));
+    case LIST_OBJECT() then listReverse(getString(Util.tuple22(v)) for v in obj.values);
+    case ARRAY() then Vector.mapToList(obj.values, getString);
+  end match;
+end getStringList;
+
+function getKeys
+  input JSON obj;
+  output list<String> keys;
+algorithm
+  keys := match obj
+    case OBJECT() then UnorderedMap.keyList(obj.values);
+    case LIST_OBJECT() then listReverse(Util.tuple21(e) for e in obj.values);
+  end match;
+end getKeys;
 
 function getBoolean
   input JSON obj;
@@ -179,6 +610,18 @@ algorithm
     case JSON.FALSE() then false;
   end match;
 end getBoolean;
+
+function size
+  input JSON obj;
+  output Integer sz;
+algorithm
+  sz := match obj
+    case OBJECT() then UnorderedMap.size(obj.values);
+    case LIST_OBJECT() then listLength(obj.values);
+    case ARRAY() then Vector.size(obj.values);
+    else 1;
+  end match;
+end size;
 
 function parse
   input String content;
@@ -280,42 +723,40 @@ end parse_number;
 function parse_array
   extends partialParser;
 protected
-  list<JSON> values = {};
+  Vector<JSON> values = Vector.new<JSON>();
   Boolean cont;
 algorithm
+  value := emptyObject();
   tokens := parse_expected_token(tokens, TokenId.ARRAYBEGIN);
   cont := peek_id(tokens) <> TokenId.ARRAYEND;
   while cont loop
     (value,tokens) := parse_value(tokens);
-    values := value::values;
+    Vector.push(values, value);
     (tokens,cont) := eat_if_next_token_matches(tokens, TokenId.COMMA);
   end while;
   tokens := parse_expected_token(tokens, TokenId.ARRAYEND);
-  value := ARRAY(listReverseInPlace(values));
+  value := ARRAY(values);
 end parse_array;
 
 function parse_object
   extends partialParser;
 protected
-  Dict tree = Dict.EMPTY();
-  list<JSON> orderedValues={};
-  list<String> orderedKeys={};
+  UnorderedMap<String, JSON> values;
   String key;
   Boolean cont;
 algorithm
+  values := UnorderedMap.new<JSON>(stringHashDjb2, stringEq);
   tokens := parse_expected_token(tokens, TokenId.OBJECTBEGIN);
   cont := peek_id(tokens) <> TokenId.ARRAYEND;
   while cont loop
     (STRING(str=key), tokens) := parse_string(tokens);
     tokens := parse_expected_token(tokens,TokenId.COLON);
     (value,tokens) := parse_value(tokens);
-    tree := AvlTree.add(tree, key, value);
-    orderedKeys := key::orderedKeys;
-    orderedValues := value::orderedValues;
+    UnorderedMap.add(key, value, values);
     (tokens,cont) := eat_if_next_token_matches(tokens, TokenId.COMMA);
   end while;
   tokens := parse_expected_token(tokens, TokenId.OBJECTEND);
-  value := OBJECT(listReverseInPlace(orderedKeys), listReverseInPlace(orderedValues), tree);
+  value := OBJECT(values);
 end parse_object;
 
 protected

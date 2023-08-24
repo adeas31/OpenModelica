@@ -18,8 +18,10 @@ Generated on |date| at |time|
   :maxdepth: 2
 
   introduction
+  packagemanager
   omedit
   plotting
+  compiler
   solving
   debugger
   porting
@@ -42,7 +44,6 @@ Generated on |date| at |time|
   omjulia
   jupyteropenmodelica
   scripting_api
-  packagemanager
   omchelptext
   simulationflags
   technical_details
@@ -52,7 +53,7 @@ Generated on |date| at |time|
 .. toctree::
   :maxdepth: 1
 
-  tracreleases
+  githubreleases
   contributors
 
 .. only:: html or epub

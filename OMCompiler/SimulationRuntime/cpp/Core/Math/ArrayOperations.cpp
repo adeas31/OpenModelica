@@ -11,20 +11,6 @@
 
 using namespace std;
 
-//void boost::assertion_failed(char const * expr, char const * function,
-//                             char const * file, long line)
-//{
-//  fprintf(stdout, "Range check failed for Array please check indices \n" );
-//}
-
-size_t getNextIndex(const vector<size_t> idx, size_t k)
-{
-  if((idx.size()-1)<k)
-    return idx.back();
-  else
-    return idx[k];
-}
-
 /**
 Concatenates n real arrays along the k:th dimension.
 */
@@ -86,120 +72,6 @@ void cat_array(int k, const vector<const BaseArray<T>*>& x, BaseArray<T>& a)
   }
 }
 
-/*
-creates an array (d) for passed multi array  shape (sp) and initialized it with elements from passed source array (s)
-s source array
-d destination array
-sp (shape,indices) of source array
-*/
-template < typename T >
-void create_array_from_shape(const spec_type& sp,BaseArray<T>& s,BaseArray<T>& d)
-{
-     //alocate target array
-   vector<size_t> shape;
-     vector<size_t>::const_iterator iter;
-     for(iter = (sp.first).begin();iter!=(sp.first).end();++iter)
-     {
-          if(*iter!=0)
-               shape.push_back(*iter);
-
-     }
-    d.setDims(shape);
-
-     //Check if the dimension of passed indices match the dimension of target array
-   if(sp.second.size()!=s.getNumDims())
-     throw ModelicaSimulationError(MODEL_ARRAY_FUNCTION,"Erro in create array from shape, number of dimensions does not match");
-
-   T* data = new T[d.getNumElems()];
-
-   idx_type::const_iterator spec_iter;
-   //calc number of indeces
-   size_t n =1;
-   for(spec_iter = sp.second.begin();spec_iter!=sp.second.end();++spec_iter)
-     {
-
-        n*=spec_iter->size();
-   }
-   size_t k =0;
-     size_t index=0;
-   vector<size_t>::const_iterator indeces_iter;
-
-   //initialize target array with elements of source array using passed indices
-   vector<size_t> idx;
-   for(int i=0;i<n;i++)
-   {
-    spec_iter = sp.second.begin();
-        for(int dim=0;dim<s.getNumDims();dim++)
-    {
-      size_t idx1 = getNextIndex(*spec_iter,i);
-      idx.push_back(idx1);
-      spec_iter++;
-    }
-    if(index>(d.getNumElems()-1))
-    {
-      throw ModelicaSimulationError(MODEL_ARRAY_FUNCTION,"Erro in create array from shape, number of dimensions does not match");
-    }
-    data[index] = s(idx);
-    idx.clear();
-    index++;
-   }
-   //assign elemets to target array
-   d.assign( data );
-     delete [] data;
-}
-
-
-
-
-/*
-fills an array (d) with passed multi array  shape (sp) and initialized it with elements from passed source array (s)
-s source array
-d destination array
-sp (shape,indices) of source array
-*/
-template < typename T >
-void fill_array_from_shape(const spec_type& sp,BaseArray<T>& s,BaseArray<T>& d)
-{
-
-
-   T* data = new T[d.getNumElems()];
-
-   idx_type::const_iterator spec_iter;
-   //calc number of indeces
-   size_t n =1;
-   for(spec_iter = sp.second.begin();spec_iter!=sp.second.end();++spec_iter)
-     {
-
-        n*=spec_iter->size();
-   }
-   size_t k =0;
-     size_t index=0;
-   vector<size_t>::const_iterator indeces_iter;
-
-   //initialize target array with elements of source array using passed indices
-   vector<size_t> idx;
-   for(int i=0;i<n;i++)
-   {
-    spec_iter = sp.second.begin();
-        for(int dim=0;dim<s.getNumDims();dim++)
-    {
-      size_t idx1 = getNextIndex(*spec_iter,i);
-      idx.push_back(idx1);
-      spec_iter++;
-    }
-    if(index>(d.getNumElems()-1))
-    {
-      throw ModelicaSimulationError(MODEL_ARRAY_FUNCTION,"Erro in create array from shape, number of dimensions does not match");
-    }
-    data[index] = s(idx);
-    idx.clear();
-    index++;
-   }
-   //assign elemets to target array
-   d.assign( data );
-     delete [] data;
-}
-
 void identity_alloc(size_t n, DynArrayDim2<int>& I)
 {
   I.setDims(n, n);
@@ -226,7 +98,9 @@ void diagonal_alloc(const BaseArray<T>& v, BaseArray<T>& D)
     D_data[i * n + i] = v_data[i];
 }
 
- //template < typename T , size_t NumDims, size_t NumDims2 >
+/**
+ * appends dimensions of size 1 to the right of s up to dimension n
+ */
 template <typename T>
 void promote_array(size_t n, const BaseArray<T>& s, BaseArray<T>& d)
 {
@@ -268,8 +142,7 @@ void multiply_array(const BaseArray<T>& inputArray, const T &b, BaseArray<T>& ou
 	outputArray.setDims(inputArray.getDims());
 	const T* data = inputArray.getData();
 	T* aim = outputArray.getData();
-	std::transform (data, data + inputArray.getNumElems(),
-                  aim, std::bind2nd(std::multiplies<T>(), b));
+	std::transform (data, data + inputArray.getNumElems(), aim, [&](const T& a) { return a*b; });
   }
 };
 
@@ -355,7 +228,7 @@ void divide_array(const BaseArray<T>& inputArray, const T &b, BaseArray<T>& outp
   }
   const T* data = inputArray.getData();
   T* aim = outputArray.getData();
-  std::transform(data, data + nelems, aim, std::bind2nd(std::divides<T>(), b));
+  std::transform(data, data + nelems, aim, [&](const T& a) { return a/b; });
 }
 
 template <typename T>
@@ -368,7 +241,7 @@ void divide_array(const T &b, const BaseArray<T>& inputArray, BaseArray<T>& outp
   }
   const T* data = inputArray.getData();
   T* aim = outputArray.getData();
-  std::transform(data, data + nelems, aim, std::bind1st(std::divides<T>(), b));
+  std::transform(data, data + nelems, aim, [&](const T& a) { return b/a; });
 }
 
 template <typename T>
@@ -437,8 +310,7 @@ void subtract_array_scalar(const BaseArray<T>& inputArray, T b, BaseArray<T>& ou
     outputArray.setDims(inputArray.getDims());
     const T* data = inputArray.getData();
     T* aim = outputArray.getData();
-    std::transform (data, data + inputArray.getNumElems(),
-                  aim, std::bind2nd(std::minus<T>(), b));
+    std::transform (data, data + inputArray.getNumElems(), aim, [&](const T& a) { return a-b; });
   }
 }
 
@@ -468,8 +340,7 @@ void add_array_scalar(const BaseArray<T>& inputArray, T b, BaseArray<T>& outputA
     outputArray.setDims(inputArray.getDims());
     const T* data = inputArray.getData();
     T* result = outputArray.getData();
-    std::transform (data, data + inputArray.getNumElems(),
-                    result, std::bind2nd(std::plus<T>(), b));
+    std::transform (data, data + inputArray.getNumElems(), result, [&](const T& a) { return a+b; });
   }
 }
 
@@ -643,15 +514,6 @@ template void BOOST_EXTENSION_EXPORT_DECL
 promote_array(size_t n, const BaseArray<int>& s, BaseArray<int>& d);
 template void BOOST_EXTENSION_EXPORT_DECL
 promote_array(size_t n, const BaseArray<bool>& s, BaseArray<bool>& d);
-
-template void BOOST_EXTENSION_EXPORT_DECL create_array_from_shape(const spec_type& sp, BaseArray<double>& s, BaseArray<double>& d);
-template void BOOST_EXTENSION_EXPORT_DECL create_array_from_shape(const spec_type& sp, BaseArray<int>& s, BaseArray<int>& d);
-template void BOOST_EXTENSION_EXPORT_DECL create_array_from_shape(const spec_type& sp, BaseArray<bool>& s, BaseArray<bool>& d);
-
-
-template void BOOST_EXTENSION_EXPORT_DECL fill_array_from_shape(const spec_type& sp, BaseArray<double>& s, BaseArray<double>& d);
-template void BOOST_EXTENSION_EXPORT_DECL fill_array_from_shape(const spec_type& sp, BaseArray<int>& s, BaseArray<int>& d);
-template void BOOST_EXTENSION_EXPORT_DECL fill_array_from_shape(const spec_type& sp, BaseArray<bool>& s, BaseArray<bool>& d);
 
 template void BOOST_EXTENSION_EXPORT_DECL
 multiply_array(const BaseArray<double>& inputArray, const double &b, BaseArray<double>& outputArray);

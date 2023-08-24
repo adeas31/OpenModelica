@@ -69,9 +69,10 @@ TreeSearchFilters::TreeSearchFilters(QWidget *pParent)
   // create the filter text box
   mpFilterTextBox = new QLineEdit;
   mpFilterTextBox->installEventFilter(this);
+  mpFilterTextBox->setClearButtonEnabled(true);
   connect(this, SIGNAL(clearFilter(QString)), mpFilterTextBox, SIGNAL(textEdited(QString)));
   // filter timer
-  mpFilterTimer = new QTimer;
+  mpFilterTimer = new QTimer(this);
   mpFilterTimer->setSingleShot(true);
   mpScrollToActiveButton = new QToolButton;
   QString scrollToActiveButtonText = tr("Scroll to Active");
@@ -107,12 +108,14 @@ TreeSearchFilters::TreeSearchFilters(QWidget *pParent)
   mpCaseSensitiveCheckBox = new QCheckBox(tr("Case Sensitive"));
   // create the search syntax combobox
   mpSyntaxComboBox = new QComboBox;
+  QStringList syntaxDescriptions;
+  syntaxDescriptions << tr("A rich Perl-like pattern matching syntax.")
+                      << tr("A simple pattern matching syntax similar to that used by shells (command interpreters) for \"file globbing\".")
+                      << tr("Fixed string matching.");
   mpSyntaxComboBox->addItem(tr("Regular Expression"), QRegExp::RegExp);
-  mpSyntaxComboBox->setItemData(0, tr("A rich Perl-like pattern matching syntax."), Qt::ToolTipRole);
   mpSyntaxComboBox->addItem(tr("Wildcard"), QRegExp::Wildcard);
-  mpSyntaxComboBox->setItemData(1, tr("A simple pattern matching syntax similar to that used by shells (command interpreters) for \"file globbing\"."), Qt::ToolTipRole);
   mpSyntaxComboBox->addItem(tr("Fixed String"), QRegExp::FixedString);
-  mpSyntaxComboBox->setItemData(2, tr("Fixed string matching."), Qt::ToolTipRole);
+  Utilities::setToolTip(mpSyntaxComboBox, "Filters", syntaxDescriptions);
   // create the layout
   QGridLayout *pFiltersWidgetLayout = new QGridLayout;
   pFiltersWidgetLayout->setContentsMargins(0, 0, 0, 0);
@@ -306,20 +309,25 @@ FixedCheckBox::FixedCheckBox(QWidget *parent)
 {
   setCheckable(false);
   mDefaultValue = false;
-  mTickState = false;
+  mInheritedValue = false;
+  mFixedState = false;
 }
 
-void FixedCheckBox::setTickState(bool defaultValue, bool tickState)
+void FixedCheckBox::setTickState(bool defaultValue, bool fixedState)
 {
   mDefaultValue = defaultValue;
-  mTickState = tickState;
+  if (mDefaultValue) {
+    mInheritedValue = fixedState;
+  } else {
+    mFixedState = fixedState;
+  }
 }
 
-QString FixedCheckBox::tickStateString()
+QString FixedCheckBox::getTickStateString() const
 {
   if (mDefaultValue) {
     return "";
-  } else if (mTickState) {
+  } else if (mFixedState) {
     return "true";
   } else {
     return "false";
@@ -343,7 +351,7 @@ void FixedCheckBox::paintEvent(QPaintEvent *event)
   }
   p.drawRect(opt.rect.adjusted(0, 0, -1, -1));
   // if is checked then draw a tick
-  if (mTickState) {
+  if ((!mDefaultValue && mFixedState) || (mDefaultValue && mInheritedValue)) {
     p.setRenderHint(QPainter::Antialiasing);
     QPen pen = p.pen();
     pen.setWidthF(1.5);
@@ -407,70 +415,6 @@ ListWidgetItem::ListWidgetItem(QString text, QColor color, QListWidget *pParentL
   setForeground(mColor);
 }
 
-CodeColorsWidget::CodeColorsWidget(QWidget *pParent)
-  : QWidget(pParent)
-{
-  // colors groupbox
-  mpColorsGroupBox = new QGroupBox(Helper::Colors);
-  // Item color label and pick color button
-  mpItemColorLabel = new Label(tr("Item Color:"));
-  mpItemColorPickButton = new QPushButton(Helper::pickColor);
-  mpItemColorPickButton->setAutoDefault(false);
-  connect(mpItemColorPickButton, SIGNAL(clicked()), SLOT(pickColor()));
-  // Items list
-  mpItemsLabel = new Label(tr("Items:"));
-  mpItemsListWidget = new QListWidget;
-  mpItemsListWidget->setItemDelegate(new ItemDelegate(mpItemsListWidget));
-  mpItemsListWidget->setMaximumHeight(90);
-  // text (black)
-  new ListWidgetItem("Text", QColor(0, 0, 0), mpItemsListWidget);
-  // make first item in the list selected
-  mpItemsListWidget->setCurrentRow(0, QItemSelectionModel::Select);
-  // preview textbox
-  mpPreviewLabel = new Label(tr("Preview:"));
-  mpPreviewPlainTextEdit = new PreviewPlainTextEdit;
-#if (QT_VERSION >= QT_VERSION_CHECK(5, 10, 0))
-  mpPreviewPlainTextEdit->setTabStopDistance((qreal)Helper::tabWidth);
-#else // QT_VERSION_CHECK
-  mpPreviewPlainTextEdit->setTabStopWidth(Helper::tabWidth);
-#endif // QT_VERSION_CHECK
-  // set colors groupbox layout
-  QGridLayout *pColorsGroupBoxLayout = new QGridLayout;
-  pColorsGroupBoxLayout->addWidget(mpItemsLabel, 1, 0);
-  pColorsGroupBoxLayout->addWidget(mpItemColorLabel, 1, 1);
-  pColorsGroupBoxLayout->addWidget(mpItemsListWidget, 2, 0);
-  pColorsGroupBoxLayout->addWidget(mpItemColorPickButton, 2, 1, Qt::AlignTop);
-  pColorsGroupBoxLayout->addWidget(mpPreviewLabel, 3, 0, 1, 2);
-  pColorsGroupBoxLayout->addWidget(mpPreviewPlainTextEdit, 4, 0, 1, 2);
-  mpColorsGroupBox->setLayout(pColorsGroupBoxLayout);
-  // set the layout
-  QVBoxLayout *pMainLayout = new QVBoxLayout;
-  pMainLayout->setContentsMargins(0, 0, 0, 0);
-  pMainLayout->addWidget(mpColorsGroupBox);
-  setLayout(pMainLayout);
-}
-
-/*!
- * \brief CodeColorsWidget::pickColor
- * Picks a color for one of the Text Settings rules.
- * This method is called when mpColorPickButton clicked SIGNAL raised.
- */
-void CodeColorsWidget::pickColor()
-{
-  QListWidgetItem *pItem = mpItemsListWidget->currentItem();
-  ListWidgetItem *pListWidgetItem = dynamic_cast<ListWidgetItem*>(pItem);
-  if (!pListWidgetItem) {
-    return;
-  }
-  QColor color = QColorDialog::getColor(pListWidgetItem->getColor());
-  if (!color.isValid()) {
-    return;
-  }
-  pListWidgetItem->setColor(color);
-  pListWidgetItem->setForeground(color);
-  emit colorUpdated();
-}
-
 /*!
  * \brief QDetachableProcess::QDetachableProcess
  * Implementation from https://stackoverflow.com/questions/42051405/qprocess-with-cmd-command-does-not-result-in-command-line-window
@@ -500,6 +444,22 @@ void QDetachableProcess::start(const QString &program, const QStringList &argume
   waitForStarted();
   setProcessState(QProcess::NotRunning);
 }
+
+#if (QT_VERSION < QT_VERSION_CHECK(5, 15, 0))
+/*!
+ * \brief QDetachableProcess::start
+ * Starts a process and detaches from it.
+ * \param command
+ * \param mode
+ */
+void QDetachableProcess::start(const QString &command, QIODevice::OpenMode mode)
+{
+  QProcess::start(command, mode);
+  waitForStarted();
+  setProcessState(QProcess::NotRunning);
+}
+#endif
+
 
 JsonDocument::JsonDocument(QObject *pParent)
   : QObject(pParent)
@@ -595,15 +555,21 @@ QString& Utilities::tempDirectory()
   static QString tmpPath;
   if (!init) {
     init = 1;
-#ifdef WIN32
+#if defined(_WIN32)
     tmpPath = QDir::tempPath() + "/OpenModelica/OMEdit/";
 #else // UNIX environment
     char *user = getenv("USER");
     tmpPath = QDir::tempPath() + "/OpenModelica_" + QString(user ? user : "nobody") + "/OMEdit/";
 #endif
     tmpPath.remove("\"");
-    if (!QDir().exists(tmpPath))
-      QDir().mkpath(tmpPath);
+    if (!QDir().exists(tmpPath)) {
+      if (!QDir().mkpath(tmpPath)) {
+        qDebug() << "Failed to create the tempDirectory" << tmpPath
+                 << "will use" << QDir::tempPath() << "instead.";
+        tmpPath = QDir::tempPath();
+        tmpPath.remove("\"");
+      }
+    }
   }
   return tmpPath;
 }
@@ -865,7 +831,7 @@ qint64 Utilities::getProcessId(QProcess *pProcess)
 #if (QT_VERSION >= QT_VERSION_CHECK(5, 3, 0))
   processId = pProcess->processId();
 #else /* Qt4 */
-#ifdef WIN32
+#if defined(_WIN32)
   _PROCESS_INFORMATION *procInfo = pProcess->pid();
   if (procInfo) {
     processId = procInfo->dwProcessId;
@@ -885,7 +851,7 @@ qint64 Utilities::getProcessId(QProcess *pProcess)
  */
 QString Utilities::formatExitCode(int code)
 {
-#ifdef WIN32
+#if defined(_WIN32)
   // Use 0xXXXXXXXX format on Windows.
   return QStringLiteral("0x%1").arg(code, 8, 16, QChar('0'));
 #else
@@ -894,7 +860,7 @@ QString Utilities::formatExitCode(int code)
 #endif
 }
 
-#ifdef WIN32
+#if defined(_WIN32)
 /* adrpo: found this on http://stackoverflow.com/questions/1173342/terminate-a-process-tree-c-for-windows
  * thanks go to: mjmarsh & Firas Assaad
  * adapted to recurse on children ids
@@ -1007,9 +973,9 @@ QGenericMatrix<3,3, double> Utilities::getRotationMatrix(QGenericMatrix<3,1,doub
   return R;
 }
 
-#ifdef WIN32
 QString Utilities::getGDBPath()
 {
+#if defined(_WIN32)
 #if defined(__MINGW32__) && !defined(__MINGW64__)
   const char *sgdb = "/tools/msys/mingw32/bin/gdb.exe";
 #endif
@@ -1023,8 +989,10 @@ QString Utilities::getGDBPath()
     QString qOMDEV = QString(OMDEV).replace("\\", "/");
     return QString(qOMDEV).append(sgdb);
   }
-}
+#else
+  return "gdb";
 #endif
+}
 
 Utilities::FileIconProvider::FileIconProviderImplementation *instance()
 {
@@ -1261,12 +1229,35 @@ QStringList Utilities::variantListToStringList(const QVariantList lst)
 }
 
 /*!
+ * \brief Utilities::addDefaultDisplayUnit
+ * \param unit
+ * \param displayUnit
+ */
+void Utilities::addDefaultDisplayUnit(const QString &unit, QStringList &displayUnit)
+{
+  /* Issue #5447
+   * For angular speeds always add in the menu in the unit column, in addition to the standard "rad/s" also "rpm"
+   * For energies always add in the menu in the Display Unit column, in addition to standard "J", also "Wh" (prefixes such as kWh, MWh, GWh will be obtained automatically)
+   */
+  /* Issue #8758
+   * Whenever unit = "K", we also add "degC" even if it is not defined as displayUnits.
+   */
+  if (unit.compare(QStringLiteral("rad/s")) == 0) {
+    displayUnit << "rpm";
+  } else if (unit.compare(QStringLiteral("J")) == 0) {
+    displayUnit << "Wh";
+  } else if (unit.compare(QStringLiteral("K")) == 0) {
+    displayUnit << "degC";
+  }
+}
+
+/*!
  * \brief Utilities::convertUnitToSymbol
  * Converts the unit to a symbol.
  * \param displayUnit
  * \return
  */
-QString Utilities::convertUnitToSymbol(const QString displayUnit)
+QString Utilities::convertUnitToSymbol(const QString &displayUnit)
 {
   if (displayUnit.compare(QStringLiteral("Ohm")) == 0) {
     return QChar(937);
@@ -1283,7 +1274,7 @@ QString Utilities::convertUnitToSymbol(const QString displayUnit)
  * \param symbol
  * \return
  */
-QString Utilities::convertSymbolToUnit(const QString symbol)
+QString Utilities::convertSymbolToUnit(const QString &symbol)
 {
   // Greek Omega
   if (symbol.compare(QChar(937)) == 0) {
@@ -1297,7 +1288,7 @@ QString Utilities::convertSymbolToUnit(const QString symbol)
 
 /*!
  * \brief Utilities::adjustRectangle
- * Adjusts the
+ * Adjusts the scene rectangle.
  * \param rectangle
  * \param factor
  * \return
@@ -1317,4 +1308,28 @@ QRectF Utilities::adjustSceneRectangle(const QRectF sceneRectangle, const qreal 
   const qreal heightFactor = sceneRectangle.width() * factor;
   rectangle.adjust(-widthFactor, -heightFactor, widthFactor, heightFactor);
   return rectangle;
+}
+
+/*!
+ * \brief Utilities::setToolTip
+ * Sets the tooltip for Combobox and its items.
+ * \param pComboBox
+ * \param description
+ * \param optionsDescriptions
+ */
+void Utilities::setToolTip(QComboBox *pComboBox, const QString &description, const QStringList &optionsDescriptions)
+{
+  QString itemsToolTip;
+  for (int i = 0; i < pComboBox->count(); ++i) {
+    // skip empty items
+    if (!pComboBox->itemText(i).isEmpty()) {
+      itemsToolTip.append(QString("<li><i>%1</i>").arg(pComboBox->itemText(i)));
+      if (optionsDescriptions.size() > i && !optionsDescriptions.at(i).isEmpty()) {
+        itemsToolTip.append(QString(": %1").arg(optionsDescriptions.at(i)));
+        pComboBox->setItemData(i, optionsDescriptions.at(i), Qt::ToolTipRole);
+      }
+      itemsToolTip.append("</li>");
+    }
+  }
+  pComboBox->setToolTip(QString("<html><head/><body><p>%1</p><ul>%2</ul></body></html>").arg(description, itemsToolTip));
 }

@@ -49,7 +49,7 @@ metamodelica_string intString(modelica_integer i)
   void *res;
   if (i>=0 && i<=9) /* Small integers are used so much it makes sense to cache them */
     return mmc_strings_len1['0'+i];
-  sprintf(buffer, "%ld", (long) i);
+  snprintf(buffer, 22, "%" PRINT_MMC_SINT_T, i);
   res = mmc_mk_scon(buffer);
   MMC_CHECK_STRING(res);
   return res;
@@ -80,16 +80,20 @@ metamodelica_string nobox_intStringChar(threadData_t *threadData,modelica_intege
 
 modelica_integer nobox_stringInt(threadData_t *threadData,metamodelica_string s)
 {
-  long res;
+  modelica_integer res;
   char *endptr,*str=MMC_STRINGDATA(s);
   MMC_CHECK_STRING(s);
   errno = 0;
+#if defined(_WIN64) || defined(__MINGW64__)
+  res = strtoll(str,&endptr,10);
+#else
   res = strtol(str,&endptr,10);
+#endif
   if (errno != 0 || str == endptr)
     MMC_THROW_INTERNAL();
   if (*endptr != '\0')
     MMC_THROW_INTERNAL();
-  if (res > INT_MAX || res < INT_MIN)
+  if (res > MODELICA_INT_MAX || res < MODELICA_INT_MIN)
     MMC_THROW_INTERNAL();
   return res;
 }
@@ -101,7 +105,7 @@ modelica_real nobox_stringReal(threadData_t *threadData,metamodelica_string s)
   MMC_CHECK_STRING(s);
   errno = 0;
   res = om_strtod(str,&endptr);
-  if (errno != 0 || str == endptr)
+  if ((errno != 0 && (res == 0 || res > DBL_MIN)) || str == endptr)
     MMC_THROW_INTERNAL();
   if (*endptr != '\0')
     MMC_THROW_INTERNAL();
@@ -449,7 +453,7 @@ modelica_metatype listAppend(modelica_metatype l1, modelica_metatype l2)
     return l2;
   res = (struct mmc_cons_struct*)mmc_alloc_words( length * 3 /*(sizeof(struct mmc_cons_struct)/sizeof(void*))*/ ); /* Do one single big alloc. It's cheaper */
   for (i=0; i<length-1; i++) { /* Write all except the last element... */
-    struct mmc_cons_struct *p = res+i;
+    p = res+i;
     p->header = MMC_STRUCTHDR(2, MMC_CONS_CTOR);
     p->data[0] = MMC_CAR(l1);
     p->data[1] = MMC_TAGPTR(res+i+1);
@@ -705,7 +709,7 @@ modelica_boolean setStackOverflowSignal(modelica_boolean inSignal)
   return inSignal;
 }
 
-#if defined(__linux__) || defined(__APPLE_CC__)
+#if defined(__linux__) || defined(__APPLE_CC__) || defined(__FreeBSD__)
 #include <execinfo.h>
 metamodelica_string referenceDebugString(modelica_metatype fnptr)
 {

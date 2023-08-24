@@ -18,9 +18,9 @@
 
 #define GCC_VERSION (__GNUC__ * 10000 \
                      + __GNUC_MINOR__ * 100 \
-		     + __GNUC_PATCHLEVEL__)
+                     + __GNUC_PATCHLEVEL__)
 
-#ifdef WIN32
+#if defined(_WIN32)
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -30,10 +30,8 @@ extern "C" {
 #include <imagehlp.h>
 #if defined(__MINGW32__) && ((GCC_VERSION > 40900) || defined(__clang__))
 #define PACKAGE OMEdit
-#include <binutils/bfd.h>
-#else
-#include <bfd.h>
 #endif
+#include <bfd.h>
 #include <psapi.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -76,7 +74,7 @@ void release_set(struct bfd_set *set);
 #ifdef __cplusplus
 } /* extern "C" */
 #endif
-#endif // #ifdef WIN32
+#endif // #if defined(_WIN32)
 
 /*
  * #endif // #ifdef QT_NO_DEBUG

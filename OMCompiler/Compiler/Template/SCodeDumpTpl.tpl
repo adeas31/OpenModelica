@@ -142,7 +142,7 @@ match class
     let header_str = dumpClassHeader(classDef, name, restriction, cmt_str, options)
     let footer_str = dumpClassFooter(classDef, cdef_str, name, cmt_str, ann_str, cc_str)
     <<
-    <%prefixes_str%> <%header_str%> <%footer_str%>
+    <%prefixes_str%> <%header_str%><%footer_str%>
     >>
 end dumpClass;
 
@@ -152,8 +152,8 @@ match classDef
   case CLASS_EXTENDS(__)
     then
     let mod_str = dumpModifier(modifications, options)
-    'extends <%name%><%mod_str%> <%cmt%>'
-  case PARTS(__) then '<%name%><%dumpRestrictionTypeVars(restr)%> <%cmt%>'
+    'extends <%name%><%mod_str%><%cmt%>'
+  case PARTS(__) then '<%name%><%dumpRestrictionTypeVars(restr)%><%cmt%>'
   else '<%name%>'
 end dumpClassHeader;
 
@@ -187,18 +187,18 @@ match classDef
     let type_str = AbsynDumpTpl.dumpTypeSpec(typeSpec)
     let mod_str = dumpModifier(modifications,options)
     let attr_str = dumpAttributes(attributes)
-    '= <%attr_str%><%type_str%><%mod_str%>'
+    ' = <%attr_str%><%type_str%><%mod_str%>'
   case ENUMERATION(__) then
     let enum_str = if enumLst then
         (enumLst |> enum => dumpEnumLiteral(enum, options) ;separator=", ")
       else
         ':'
-    '= enumeration(<%enum_str%>)'
+    ' = enumeration(<%enum_str%>)'
   case PDER(__) then
     let func_str = AbsynDumpTpl.dumpPath(functionPath)
-    '= der(<%func_str%>, <%derivedVariables ;separator=", "%>)'
+    ' = der(<%func_str%>, <%derivedVariables ;separator=", "%>)'
   case OVERLOAD(__) then
-    '= overload(<%pathLst |> path => AbsynDumpTpl.dumpPath(path); separator=", "%>)'
+    ' = overload(<%pathLst |> path => AbsynDumpTpl.dumpPath(path); separator=", "%>)'
   else errorMsg("SCodeDump.dumpClassDef: Unknown class definition.")
 end dumpClassDef;
 
@@ -209,7 +209,7 @@ match classDef
   case ENUMERATION(__) then '<%cdefStr%><%cmt%><%ann%><%cc_str%>'
   case PDER(__) then cdefStr
   case _ then
-    let annstr = if ann then '<%ann%>; ' else ''
+    let annstr = if ann then '<%ann%>;' else ''
     if cdefStr then
       <<
 
@@ -219,7 +219,7 @@ match classDef
       >>
     else
       <<
-      <%annstr%>end <%name%><%cc_str%>
+      <%annstr%> end <%name%><%cc_str%>
       >>
 end dumpClassFooter;
 
@@ -288,13 +288,9 @@ template dumpEquations(list<SCode.Equation> equations, String label, SCodeDumpOp
 end dumpEquations;
 
 template dumpEquation(SCode.Equation equation, SCodeDumpOptions options)
-::= match equation case EQUATION(__) then dumpEEquation(eEquation, options)
-end dumpEquation;
-
-template dumpEEquation(SCode.EEquation equation, SCodeDumpOptions options)
 ::=
 match equation
-  case EQ_IF(__) then dumpIfEEquation(equation, options)
+  case EQ_IF(__) then dumpIfEquation(equation, options)
   case EQ_EQUALS(__) then
     let lhs_str = AbsynDumpTpl.dumpLhsExp(expLeft)
     let rhs_str = AbsynDumpTpl.dumpExp(expRight)
@@ -305,8 +301,8 @@ match equation
     let rhs_str = AbsynDumpTpl.dumpCref(crefRight)
     let cmt_str = dumpComment(comment, options)
     'connect(<%lhs_str%>, <%rhs_str%>)<%cmt_str%>;'
-  case EQ_FOR(__) then dumpForEEquation(equation, options)
-  case EQ_WHEN(__) then dumpWhenEEquation(equation, options)
+  case EQ_FOR(__) then dumpForEquation(equation, options)
+  case EQ_WHEN(__) then dumpWhenEquation(equation, options)
   case EQ_ASSERT(__) then
     let cond_str = AbsynDumpTpl.dumpExp(condition)
     let msg_str = AbsynDumpTpl.dumpExp(message)
@@ -326,21 +322,21 @@ match equation
     let exp_str = AbsynDumpTpl.dumpExp(exp)
     let cmt_str = dumpComment(comment, options)
     '<%exp_str%><%cmt_str%>;'
-  else errorMsg("SCodeDump.dumpEEquation: Unknown EEquation.")
-end dumpEEquation;
+  else errorMsg("SCodeDump.dumpEquation: Unknown Equation.")
+end dumpEquation;
 
-template dumpIfEEquation(SCode.EEquation ifequation, SCodeDumpOptions options)
+template dumpIfEquation(SCode.Equation ifequation, SCodeDumpOptions options)
 ::=
 match ifequation
   case EQ_IF(condition = if_cond :: elseif_conds,
              thenBranch = if_branch :: elseif_branches) then
     let if_cond_str = AbsynDumpTpl.dumpExp(if_cond)
-    let if_branch_str = (if_branch |> e => dumpEEquation(e, options) ;separator="\n")
-    let elseif_str = dumpElseIfEEquation(elseif_conds, elseif_branches, options)
+    let if_branch_str = (if_branch |> e => dumpEquation(e, options) ;separator="\n")
+    let elseif_str = dumpElseIfEquation(elseif_conds, elseif_branches, options)
     let else_str = if elseBranch then
       <<
       else
-        <%elseBranch |> e => dumpEEquation(e, options) ;separator="\n"%>
+        <%elseBranch |> e => dumpEquation(e, options) ;separator="\n"%>
       >>
     let cmt_str = dumpComment(comment, options)
     <<
@@ -350,31 +346,31 @@ match ifequation
     <%else_str%>
     end if<%cmt_str%>;
     >>
-end dumpIfEEquation;
+end dumpIfEquation;
 
-template dumpElseIfEEquation(list<Absyn.Exp> condition,
-    list<list<SCode.EEquation>> branches, SCodeDumpOptions options)
+template dumpElseIfEquation(list<Absyn.Exp> condition,
+    list<list<SCode.Equation>> branches, SCodeDumpOptions options)
 ::=
 match condition
   case cond :: rest_conds then
     match branches
       case branch :: rest_branches then
         let cond_str = AbsynDumpTpl.dumpExp(cond)
-        let branch_str = (branch |> e => dumpEEquation(e, options) ;separator="\n")
-        let rest_str = dumpElseIfEEquation(rest_conds, rest_branches, options)
+        let branch_str = (branch |> e => dumpEquation(e, options) ;separator="\n")
+        let rest_str = dumpElseIfEquation(rest_conds, rest_branches, options)
         <<
         elseif <%cond_str%> then
           <%branch_str%>
         <%rest_str%>
         >>
-end dumpElseIfEEquation;
+end dumpElseIfEquation;
 
-template dumpForEEquation(SCode.EEquation for_equation, SCodeDumpOptions options)
+template dumpForEquation(SCode.Equation for_equation, SCodeDumpOptions options)
 ::=
 match for_equation
   case EQ_FOR(range=SOME(range)) then
     let range_str = AbsynDumpTpl.dumpExp(range)
-    let eq_str = (eEquationLst |> e => dumpEEquation(e, options) ;separator="\n")
+    let eq_str = (eEquationLst |> e => dumpEquation(e, options) ;separator="\n")
     let cmt_str = dumpComment(comment, options)
     <<
     for <%index%> in <%range_str%> loop
@@ -382,24 +378,24 @@ match for_equation
     end for<%cmt_str%>;
     >>
   case EQ_FOR(__) then
-    let eq_str = (eEquationLst |> e => dumpEEquation(e, options) ;separator="\n")
+    let eq_str = (eEquationLst |> e => dumpEquation(e, options) ;separator="\n")
     let cmt_str = dumpComment(comment, options)
     <<
     for <%index%> loop
       <%eq_str%>
     end for<%cmt_str%>;
     >>
-end dumpForEEquation;
+end dumpForEquation;
 
-template dumpWhenEEquation(SCode.EEquation when_equation, SCodeDumpOptions options)
+template dumpWhenEquation(SCode.Equation when_equation, SCodeDumpOptions options)
 ::=
 match when_equation
   case EQ_WHEN(__) then
     let cond_str = AbsynDumpTpl.dumpExp(condition)
-    let body_str = (eEquationLst |> e => dumpEEquation(e, options) ;separator="\n")
+    let body_str = (eEquationLst |> e => dumpEquation(e, options) ;separator="\n")
     let else_str = (elseBranches |> (else_cond, else_body) =>
       let else_cond_str = AbsynDumpTpl.dumpExp(else_cond)
-      let else_body_str = (else_body |> e => dumpEEquation(e, options) ;separator="\n")
+      let else_body_str = (else_body |> e => dumpEquation(e, options) ;separator="\n")
       <<
       elsewhen <%else_cond_str%> then
         <%else_body_str%>
@@ -411,7 +407,7 @@ match when_equation
     <%else_str%>
     end when<%cmt_str%>;
     >>
-end dumpWhenEEquation;
+end dumpWhenEquation;
 
 template dumpAssertionLevel(Absyn.Exp exp)
 ::= match exp

@@ -50,11 +50,42 @@ PolygonAnnotation::PolygonAnnotation(QString annotation, GraphicsView *pGraphics
   setShapeFlags(true);
 }
 
+PolygonAnnotation::PolygonAnnotation(ModelInstance::Polygon *pPolygon, bool inherited, GraphicsView *pGraphicsView)
+  : ShapeAnnotation(inherited, pGraphicsView, 0, 0)
+{
+  mpOriginItem = new OriginItem(this);
+  mpOriginItem->setPassive();
+  mpPolygon = pPolygon;
+  // set the default values
+  GraphicItem::setDefaults();
+  FilledShape::setDefaults();
+  ShapeAnnotation::setDefaults();
+  // set users default value by reading the settings file.
+  ShapeAnnotation::setUserDefaults();
+  parseShapeAnnotation();
+  setShapeFlags(true);
+}
+
 PolygonAnnotation::PolygonAnnotation(ShapeAnnotation *pShapeAnnotation, Element *pParent)
   : ShapeAnnotation(pShapeAnnotation, pParent)
 {
   mpOriginItem = 0;
   updateShape(pShapeAnnotation);
+  applyTransformation();
+}
+
+PolygonAnnotation::PolygonAnnotation(ModelInstance::Polygon *pPolygon, Element *pParent)
+  : ShapeAnnotation(pParent)
+{
+  mpOriginItem = 0;
+  mpPolygon = pPolygon;
+  // set the default values
+  GraphicItem::setDefaults();
+  FilledShape::setDefaults();
+  ShapeAnnotation::setDefaults();
+  // set users default value by reading the settings file.
+  ShapeAnnotation::setUserDefaults();
+  parseShapeAnnotation();
   applyTransformation();
 }
 
@@ -91,28 +122,44 @@ void PolygonAnnotation::parseShapeAnnotation(QString annotation)
     return;
   }
   mPoints.clear();
-  // 9th item of list contains the points.
-  QStringList pointsList = StringHandler::getStrings(StringHandler::removeFirstLastCurlBrackets(stripDynamicSelect(list.at(8))));
-  foreach (QString point, pointsList) {
-    QStringList polygonPoints = StringHandler::getStrings(StringHandler::removeFirstLastCurlBrackets(point));
-    if (polygonPoints.size() >= 2) {
-      mPoints.append(QPointF(polygonPoints.at(0).toFloat(), polygonPoints.at(1).toFloat()));
-    }
-  }
+  mPoints.parse(list.at(8));
   /* The polygon is automatically closed, if the first and the last points are not identical. */
   if (mPoints.size() == 1) {
-    mPoints.append(mPoints.first());
-    mPoints.append(mPoints.first());
+    mPoints.append(mPoints.at(0));
+    mPoints.append(mPoints.at(0));
   } else if (mPoints.size() == 2) {
-    mPoints.append(mPoints.first());
+    mPoints.append(mPoints.at(0));
   }
   if (mPoints.size() > 0) {
-    if (mPoints.first() != mPoints.last()) {
-      mPoints.append(mPoints.first());
+    if (mPoints.at(0) != mPoints.at(mPoints.size() - 1)) {
+      mPoints.append(mPoints.at(0));
     }
   }
   // 10th item of the list is smooth.
   mSmooth = StringHandler::getSmoothType(stripDynamicSelect(list.at(9)));
+}
+
+void PolygonAnnotation::parseShapeAnnotation()
+{
+  GraphicItem::parseShapeAnnotation(mpPolygon);
+  FilledShape::parseShapeAnnotation(mpPolygon);
+
+  mPoints = mpPolygon->getPoints();
+  /* The polygon is automatically closed, if the first and the last points are not identical. */
+  if (mPoints.size() == 1) {
+    mPoints.append(mPoints.at(0));
+    mPoints.append(mPoints.at(0));
+  } else if (mPoints.size() == 2) {
+    mPoints.append(mPoints.at(0));
+  }
+  if (mPoints.size() > 0) {
+    if (mPoints.at(0) != mPoints.at(mPoints.size() - 1)) {
+      mPoints.append(mPoints.at(0));
+    }
+  }
+  mPoints.evaluate(mpPolygon->getParentModel());
+  mSmooth = mpPolygon->getSmooth();
+  mSmooth.evaluate(mpPolygon->getParentModel());
 }
 
 QPainterPath PolygonAnnotation::getShape() const
@@ -151,7 +198,7 @@ QPainterPath PolygonAnnotation::getShape() const
         }
       }
     } else {
-      path.addPolygon(QPolygonF(mPoints.toVector()));
+      path.addPolygon(QPolygonF(mPoints));
     }
   }
   return path;
@@ -199,23 +246,9 @@ QString PolygonAnnotation::getOMCShapeAnnotation()
   annotationString.append(GraphicItem::getOMCShapeAnnotation());
   annotationString.append(FilledShape::getOMCShapeAnnotation());
   // get points
-  QString pointsString;
-  if (mPoints.size() > 0) {
-    pointsString.append("{");
-  }
-  for (int i = 0 ; i < mPoints.size() ; i++) {
-    pointsString.append("{").append(QString::number(mPoints[i].x())).append(",");
-    pointsString.append(QString::number(mPoints[i].y())).append("}");
-    if (i < mPoints.size() - 1) {
-      pointsString.append(",");
-    }
-  }
-  if (mPoints.size() > 0) {
-    pointsString.append("}");
-    annotationString.append(pointsString);
-  }
+  annotationString.append(mPoints.toQString());
   // get the smooth
-  annotationString.append(StringHandler::getSmoothString(mSmooth));
+  annotationString.append(mSmooth.toQString());
   return annotationString.join(",");
 }
 
@@ -240,24 +273,12 @@ QString PolygonAnnotation::getShapeAnnotation()
   annotationString.append(GraphicItem::getShapeAnnotation());
   annotationString.append(FilledShape::getShapeAnnotation());
   // get points
-  QString pointsString;
   if (mPoints.size() > 0) {
-    pointsString.append("points={");
-  }
-  for (int i = 0 ; i < mPoints.size() ; i++) {
-    pointsString.append("{").append(QString::number(mPoints[i].x())).append(",");
-    pointsString.append(QString::number(mPoints[i].y())).append("}");
-    if (i < mPoints.size() - 1) {
-      pointsString.append(",");
-    }
-  }
-  if (mPoints.size() > 0) {
-    pointsString.append("}");
-    annotationString.append(pointsString);
+    annotationString.append(QString("points=%1").arg(mPoints.toQString()));
   }
   // get the smooth
-  if (mSmooth != StringHandler::SmoothNone) {
-    annotationString.append(QString("smooth=").append(StringHandler::getSmoothString(mSmooth)));
+  if (mSmooth.isDynamicSelectExpression() || mSmooth.toQString().compare(QStringLiteral("Smooth.None")) != 0) {
+    annotationString.append(QString("smooth=%1").arg(mSmooth.toQString()));
   }
   return QString("Polygon(").append(annotationString.join(",")).append(")");
 }
@@ -266,7 +287,7 @@ void PolygonAnnotation::addPoint(QPointF point)
 {
   prepareGeometryChange();
   mPoints.append(point);
-  mPoints.back() = mPoints.first();
+  mPoints.setPoint(mPoints.size() - 1, mPoints.at(0));
 }
 
 void PolygonAnnotation::removePoint(int index)
@@ -297,6 +318,11 @@ void PolygonAnnotation::updateShape(ShapeAnnotation *pShapeAnnotation)
   mPoints.clear();
   setPoints(pShapeAnnotation->getPoints());
   ShapeAnnotation::setDefaults(pShapeAnnotation);
+}
+
+ModelInstance::Extend *PolygonAnnotation::getExtend() const
+{
+  return mpPolygon->getParentExtend();
 }
 
 /*!

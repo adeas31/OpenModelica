@@ -9,6 +9,9 @@ greaterThan(QT_MAJOR_VERSION, 4) {
     QT *= printsupport widgets
 }
 
+# Set the C++ standard.
+CONFIG += c++14
+
 TARGET = OMPlot
 TEMPLATE = lib
 
@@ -28,7 +31,8 @@ SOURCES += Plot.cpp \
     PlotApplication.cpp \
     PlotWindowContainer.cpp \
     PlotMainWindow.cpp \
-    ScaleDraw.cpp
+    ScaleDraw.cpp \
+    LinearScaleEngine.cpp
 
 HEADERS  += OMPlot.h \
     PlotZoomer.h \
@@ -41,7 +45,8 @@ HEADERS  += OMPlot.h \
     PlotApplication.h \
     PlotWindowContainer.h \
     PlotMainWindow.h \
-    ScaleDraw.h
+    ScaleDraw.h \
+    LinearScaleEngine.h
 
 win32 {
   _cxx = $$(CXX)

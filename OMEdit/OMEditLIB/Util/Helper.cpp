@@ -40,10 +40,12 @@ QString Helper::applicationName = "OMEdit";
 QString Helper::applicationIntroText = "OpenModelica Connection Editor";
 QString Helper::organization = "openmodelica";  /* case-sensitive string. Don't change it. Used by ini settings file. */
 QString Helper::application = "omedit"; /* case-sensitive string. Don't change it. Used by ini settings file. */
-// these two variables are set once we are connected to OMC......in OMCProxy::startServer().
+// Following four variables are set once we are connected to OMC......in OMCProxy::initializeOMC().
 QString Helper::OpenModelicaVersion = "";
+QString Helper::OpenModelicaUsersGuideVersion = "latest";
 QString Helper::OpenModelicaHome = "";
-QString Helper::OpenModelicaLibrary = "";
+QString Helper::ModelicaPath = "";
+QString Helper::userHomeDirectory = "";
 QString Helper::OMCServerName = "OMEdit";
 QString Helper::omFileTypes = "All Files (*.mo *.mol *.ssp);;Modelica Files (*.mo);;Encrypted Modelica Libraries (*.mol);;System Structure and Parameterization Files (*.ssp)";
 QString Helper::omEncryptedFileTypes = "Encrypted Modelica Libraries (*.mol)";
@@ -58,7 +60,7 @@ QString Helper::matFileTypes = "MAT Files (*.mat)";
 QString Helper::csvFileTypes = "CSV Files (*.csv)";
 QString Helper::omResultFileTypes = "OpenModelica Result Files (*.mat *.plt *.csv)";
 QString Helper::omResultFileTypesRegExp = "\\b(mat|plt|csv)\\b";
-#ifdef WIN32
+#if defined(_WIN32)
 QString Helper::exeFileTypes = "EXE Files (*.exe)";
 #else
 QString Helper::exeFileTypes = "Executable files (*)";
@@ -67,6 +69,7 @@ QString Helper::txtFileTypes = "TXT Files (*.txt)";
 QString Helper::figaroFileTypes = "Figaro Files (*.fi)";
 QString Helper::visualizationFileTypes = "Visualization Files (*.mat *.csv *.fmu);;Visualization MAT(*.mat);;Visualization CSV(*.csv);;Visualization FMU(*.fmu)";
 QString Helper::subModelFileTypes = "SubModel Files (*.fmu *.mat *.csv);;SubModel FMU (*.fmu);;SubModel MAT (*.mat);;SubModel CSV (*.csv)";
+QString Helper::omScriptTypes = "Script Files (*.mos)";
 int Helper::treeIndentation = 13;
 QSize Helper::iconSize = QSize(20, 20);
 int Helper::tabWidth = 20;
@@ -91,6 +94,10 @@ QString Helper::simulationKind = ".OpenModelica.Scripting.ErrorKind.simulation";
 QString Helper::scriptingKind = ".OpenModelica.Scripting.ErrorKind.scripting";
 QString Helper::tabbed = "Tabbed";
 QString Helper::subWindow = "SubWindow";
+QString Helper::iconViewForSettings = "Icon View";
+QString Helper::diagramViewForSettings = "Diagram View";
+QString Helper::textViewForSettings = "Text View";
+QString Helper::documentationViewForSettings = "Documentation View";
 QString Helper::structuredOutput = "Structured";
 QString Helper::textOutput = "Text";
 QString Helper::utf8 = "UTF-8";
@@ -142,6 +149,10 @@ QString Helper::cancel;
 QString Helper::reset;
 QString Helper::close;
 QString Helper::error;
+QString Helper::percentageLabel;
+QString Helper::chooseTransparency;
+QString Helper::chooseSpecularity;
+QString Helper::chooseColor;
 QString Helper::chooseFile;
 QString Helper::chooseFiles;
 QString Helper::saveFile;
@@ -342,10 +353,11 @@ QString Helper::stepInto;
 QString Helper::stepReturn;
 QString Helper::attachToRunningProcess;
 QString Helper::attachToRunningProcessTip;
-QString Helper::crashReport;
+QString Helper::reportIssue;
 QString Helper::parsingFailedJson;
 QString Helper::expandAll;
 QString Helper::collapseAll;
+QString Helper::versionLabel;
 QString Helper::version;
 QString Helper::unlimited;
 QString Helper::simulationOutput;
@@ -420,6 +432,10 @@ QString Helper::archivedSimulations;
 QString Helper::systemSimulationInformation;
 QString Helper::translationFlags;
 QString Helper::send;
+QString Helper::installLibrary;
+QString Helper::upgradeInstalledLibraries;
+QString Helper::updateLibraryIndex;
+QString Helper::dataReconciliation;
 
 void Helper::initHelperVariables()
 {
@@ -440,6 +456,10 @@ void Helper::initHelperVariables()
   Helper::reset = tr("Reset");
   Helper::close = tr("Close");
   Helper::error = tr("Error");
+  Helper::percentageLabel = tr("Percentage:");
+  Helper::chooseTransparency = tr("Choose Transparency");
+  Helper::chooseSpecularity = tr("Choose Specularity");
+  Helper::chooseColor = tr("Choose Color");
   Helper::chooseFile = tr("Choose File");
   Helper::chooseFiles = tr("Choose File(s)");
   Helper::saveFile = tr("Save File");
@@ -641,10 +661,11 @@ void Helper::initHelperVariables()
   Helper::stepReturn = tr("Step Return");
   Helper::attachToRunningProcess = tr("Attach to Running Process");
   Helper::attachToRunningProcessTip = tr("Attach the debugger to running process");
-  Helper::crashReport = tr("Crash Report");
+  Helper::reportIssue = tr("Report Issue");
   Helper::parsingFailedJson = tr("Parsing of JSON file failed");
   Helper::expandAll = tr("Expand All");
   Helper::collapseAll = tr("Collapse All");
+  Helper::versionLabel = tr("Version:");
   Helper::version = tr("Version");
   Helper::unlimited = tr("unlimited");
   Helper::simulationOutput = tr("Simulation Output");
@@ -719,6 +740,10 @@ void Helper::initHelperVariables()
   Helper::systemSimulationInformation = tr("System Simulation Information");
   Helper::translationFlags = tr("Translation Flags");
   Helper::send = tr("Send");
+  Helper::installLibrary = tr("Install Library");
+  Helper::upgradeInstalledLibraries = tr("Upgrade Installed Libraries");
+  Helper::updateLibraryIndex = tr("Update Library Index");
+  Helper::dataReconciliation = tr("Data Reconciliation");
 }
 
 QString GUIMessages::getMessage(int type)
@@ -729,6 +754,8 @@ QString GUIMessages::getMessage(int type)
       return tr("Please check the Messages Browser for more error specific details.");
     case SAME_COMPONENT_NAME:
       return tr("A component with the name <b>%1</b> already exists or is a Modelica keyword. Please choose another name.");
+    case MISMATCHED_CONNECTORS_IN_CONNECT:
+      return tr("Connectors %1 and %2 are not compatible.");
     case SAME_COMPONENT_CONNECT:
       return tr("You cannot connect a component to itself.");
     case NO_MODELICA_CLASS_OPEN:
@@ -808,7 +835,7 @@ QString GUIMessages::getMessage(int type)
     case FIGARO_GENERATED:
       return tr("The FIGARO is generated.");
     case ENCRYPTED_PACKAGE_GENERATED:
-      return tr("The encrytped package is generated at <b>%1</b>.");
+      return tr("The encrypted package is generated at <b>%1</b>.");
     case READONLY_PACKAGE_GENERATED:
       return tr("The read-only package is generated at <b>%1</b>.");
     case UNLOAD_CLASS_MSG:
@@ -847,10 +874,16 @@ QString GUIMessages::getMessage(int type)
       return tr("Terminal command is not set. You can define a new terminal command in <b>%1->General->Terminal Command</b>.");
     case UNABLE_FIND_COMPONENT_IN_CONNECTION:
       return tr("Unable to find component %1 while parsing connection %2.");
+    case UNABLE_FIND_COMPONENT_IN_CONNECTION_NEW:
+      return tr("Unable to find component %1 while parsing %2 in %3.");
     case UNABLE_FIND_COMPONENT_IN_TRANSITION:
       return tr("Unable to find component %1 while parsing transition(%2).");
+    case UNABLE_FIND_COMPONENT_IN_TRANSITION_NEW:
+      return tr("Unable to find component %1 while parsing %2 in %3.");
     case UNABLE_FIND_COMPONENT_IN_INITIALSTATE:
       return tr("Unable to find component %1 while parsing initialState(%2).");
+    case UNABLE_FIND_COMPONENT_IN_INITIALSTATE_NEW:
+      return tr("Unable to find component %1 while parsing %2 in %3.");
     case SELECT_SIMULATION_OPTION:
       return tr("Select at least one of the following options, <br /><br />* %1<br />* %2<br />* %3<br />* %4")
           .arg(Helper::saveExperimentAnnotation)
@@ -867,6 +900,8 @@ QString GUIMessages::getMessage(int type)
       return tr("Name <b>%1</b> is not a valid identifier.<br />A name must start with a letter, and all characters must be letters or digits. It may not be a reserved word.");
     case ENTER_SCRIPT:
       return tr("Please enter a script file.");
+    case LIBRARY_INDEX_FILE_NOT_FOUND:
+      return tr("Library index file <b>%1</b> doesn't exist.");
     default:
       return "";
   }

@@ -9,6 +9,9 @@ greaterThan(QT_MAJOR_VERSION, 4) {
     QT *= printsupport widgets
 }
 
+# Set the C++ standard.
+CONFIG += c++14
+
 TARGET = OMPlot
 TEMPLATE = app
 CONFIG += console
@@ -26,7 +29,8 @@ HEADERS += OMPlot.h \
     PlotApplication.h \
     PlotWindowContainer.h \
     PlotMainWindow.h \
-    ScaleDraw.h
+    ScaleDraw.h \
+    LinearScaleEngine.h
 
 win32 {
   _cxx = $$(CXX)

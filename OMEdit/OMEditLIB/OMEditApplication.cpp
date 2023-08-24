@@ -79,11 +79,8 @@ OMEditApplication::OMEditApplication(int &argc, char **argv, threadData_t* threa
   }
   QSettings *pSettings = Utilities::getApplicationSettings();
   QLocale settingsLocale = QLocale(pSettings->value("language").toString());
-  settingsLocale = settingsLocale.name() == "C" ? pSettings->value("language").toLocale() : settingsLocale;
-  QString locale = settingsLocale.name().isEmpty() ? QLocale::system().name() : settingsLocale.name();
-  /* Set the default locale of the application so that QSpinBox etc show values according to the locale.
-   * Set OMEdit locale to C so that we get dot as decimal separator instead of comma.
-   */
+  QString locale = settingsLocale.name() == "C" ? QLocale::system().name() : settingsLocale.name();
+  // Set OMEdit locale to C so that we get dot as decimal separator instead of comma.
   QLocale::setDefault(QLocale::c());
 
   QString translationDirectory = installationDirectoryPath + QString("/share/omedit/nls");
@@ -111,8 +108,11 @@ OMEditApplication::OMEditApplication(int &argc, char **argv, threadData_t* threa
   setlocale(LC_NUMERIC, "C");
   // if user has requested to open the file by passing it in argument then,
   bool debug = false;
+  bool newApi = false;
+  bool newApiProfiling = false;
+  bool newApiCommandLine = false;
   QString fileName = "";
-  QStringList fileNames;
+  QStringList fileNames, invalidFlags;
   if (arguments().size() > 1 && !testsuiteRunning) {
     for (int i = 1; i < arguments().size(); i++) {
       if (strncmp(arguments().at(i).toUtf8().constData(), "--Debug=",8) == 0) {
@@ -120,8 +120,19 @@ OMEditApplication::OMEditApplication(int &argc, char **argv, threadData_t* threa
         debugArg.remove("--Debug=");
         if (0 == strcmp("true", debugArg.toUtf8().constData())) {
           debug = true;
-        } else {
-          debug = false;
+        }
+      } else if (strncmp(arguments().at(i).toUtf8().constData(), "--NAPI=",7) == 0) {
+        newApiCommandLine = true;
+        QString napiArg = arguments().at(i);
+        napiArg.remove("--NAPI=");
+        if (0 == strcmp("true", napiArg.toUtf8().constData())) {
+          newApi = true;
+        }
+      } else if (strncmp(arguments().at(i).toUtf8().constData(), "--NAPIProfiling=",16) == 0) {
+        QString napiProfilingArg = arguments().at(i);
+        napiProfilingArg.remove("--NAPIProfiling=");
+        if (0 == strcmp("true", napiProfilingArg.toUtf8().constData())) {
+          newApiProfiling = true;
         }
       } else {
         fileName = arguments().at(i);
@@ -136,7 +147,7 @@ OMEditApplication::OMEditApplication(int &argc, char **argv, threadData_t* threa
           if (QFile::exists(absoluteFileName)) {
             fileNames << absoluteFileName;
           } else {
-            printf("Invalid command line argument: %s %s\n", fileName.toUtf8().constData(), absoluteFileName.toUtf8().constData());
+            invalidFlags.append(fileName);
           }
         }
       }
@@ -145,11 +156,19 @@ OMEditApplication::OMEditApplication(int &argc, char **argv, threadData_t* threa
   // MainWindow Initialization
   MainWindow *pMainwindow = MainWindow::instance();
   pMainwindow->setDebug(debug);
+  pMainwindow->setNewApi(newApi);
+  pMainwindow->setNewApiCommandLine(newApiCommandLine);
+  pMainwindow->setNewApiProfiling(newApiProfiling);
   pMainwindow->setTestsuiteRunning(testsuiteRunning);
   pMainwindow->setUpMainWindow(threadData);
   if (pMainwindow->getExitApplicationStatus()) {        // if there is some issue in running the application.
     quit();
     exit(1);
+  }
+  // show error of invalid flags
+  if (!invalidFlags.isEmpty()) {
+    MessagesWidget::instance()->addGUIMessage(MessageItem(MessageItem::Modelica, QString("Invalid command line argument(s): %1").arg(invalidFlags.join(", ")),
+                                                          Helper::scriptingKind, Helper::errorLevel));
   }
   // open the files passed as command line arguments
   foreach (QString fileName, fileNames) {
@@ -181,7 +200,6 @@ OMEditApplication::OMEditApplication(int &argc, char **argv, threadData_t* threa
       switch (answer) {
         case QMessageBox::AcceptRole:
           OptionsDialog::instance()->getSimulationPage()->getTranslationFlagsWidget()->getOldInstantiationCheckBox()->setChecked(false);
-          Utilities::getApplicationSettings()->setValue("simulation/newInst", true);
           OptionsDialog::instance()->saveSimulationSettings();
           break;
         case QMessageBox::RejectRole:

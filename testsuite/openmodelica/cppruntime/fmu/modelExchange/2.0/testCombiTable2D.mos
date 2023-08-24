@@ -2,7 +2,7 @@
 // keywords: FMI export with tables #4772, #5227, #5963
 // status: correct
 // teardown_command: rm -rf binaries sources modelDescription.xml modelDescription.tmp.xml *TableTest*
-// cflags: -d=-newInst
+// cflags: -d=newInst
 //
 
 setCommandLineOptions("+simCodeTarget=Cpp"); getErrorString();
@@ -21,7 +21,7 @@ getErrorString();
 // enable directional derivatives
 setCommandLineOptions("-d=-disableDirectionalDerivatives"); getErrorString();
 
-translateModelFMU(TableTest, version="2.0"); getErrorString();
+buildModelFMU(TableTest, version="2.0"); getErrorString();
 
 importFMU("TableTest.fmu"); getErrorString();
 loadFile("TableTest_me_FMU.mo"); getErrorString();

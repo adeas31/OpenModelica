@@ -50,7 +50,10 @@ import Type = NFType;
 
 public
 function inlineCallExp
+  "Inlines a call if it has an EarlyInline=true annotation, or always if
+   forceInline is set to true."
   input Expression callExp;
+  input Boolean forceInline = false;
   output Expression result;
 algorithm
   result := match callExp
@@ -64,10 +67,11 @@ algorithm
           case DAE.InlineType.BUILTIN_EARLY_INLINE() then true;
           case DAE.InlineType.EARLY_INLINE()
             guard Flags.isSet(Flags.INLINE_FUNCTIONS) then true;
-          else false;
+          case DAE.InlineType.NORM_INLINE() then forceInline or Flags.getConfigBool(Flags.FRONTEND_INLINE);
+          else forceInline;
         end match;
       then
-        if shouldInline then inlineCall(call) else callExp;
+        if shouldInline then inlineCall(call, forceInline) else callExp;
 
     else callExp;
   end match;
@@ -75,6 +79,7 @@ end inlineCallExp;
 
 function inlineCall
   input Call call;
+  input Boolean forceInline = false;
   output Expression exp;
 algorithm
   exp := match call
@@ -85,52 +90,10 @@ algorithm
       list<InstNode> inputs, outputs, locals;
       list<Statement> body;
       Statement stmt;
+      Binding binding;
 
-    case Call.TYPED_CALL(fn = fn as Function.FUNCTION(inputs = inputs, outputs = outputs, locals = locals),
-                         arguments = args)
-      algorithm
-        body := Function.getBody(fn);
-
-        // This function can so far only handle functions with exactly one
-        // statement and output and no local variables.
-        if listLength(body) <> 1 or listLength(outputs) <> 1 or listLength(locals) > 0 then
-          exp := Expression.CALL(call);
-          return;
-        end if;
-
-        Error.assertion(listLength(inputs) == listLength(args),
-          getInstanceName() + " got wrong number of arguments for " +
-          AbsynUtil.pathString(Function.name(fn)), sourceInfo());
-
-        stmt := listHead(body);
-
-        // TODO: Instead of repeating this for each input we should probably
-        //       just build a lookup tree or hash table and go through the
-        //       statement once.
-        for i in inputs loop
-          arg :: args := args;
-          stmt := Statement.mapExp(stmt,
-            function Expression.map(func = function replaceCrefNode(node = i, value = arg)));
-        end for;
-      then
-        getOutputExp(stmt, listHead(outputs), call);
-
-    else Expression.CALL(call);
-  end match;
-end inlineCall;
-
-function inlineRecordConstructorCall
-  input Expression exp;
-  output Expression outExp;
-protected
-  Function fn;
-  Expression arg;
-  list<Expression> args;
-  list<Statement> body;
-  Binding binding;
-algorithm
-  outExp := match exp
-    case Expression.CALL(call = Call.TYPED_CALL(fn = fn, arguments = args))
+    // Record constructor
+    case Call.TYPED_CALL(fn = fn, arguments = args)
         guard InstNode.name(InstNode.parentScope(fn.node)) == "'constructor'"
       algorithm
         body := Function.getBody(fn);
@@ -140,20 +103,70 @@ algorithm
         binding := Component.getBinding(InstNode.component(listHead(fn.outputs)));
 
         if Binding.hasExp(binding) then
-          outExp := Binding.getExp(binding);
-          true := Expression.isRecord(outExp);
+          exp := Binding.getExp(binding);
+          true := Expression.isRecord(exp);
         else
-          outExp := Class.makeRecordExp(listHead(fn.outputs));
+          exp := Class.makeRecordExp(listHead(fn.outputs));
         end if;
 
         for i in fn.inputs loop
           arg :: args := args;
-          outExp := Expression.map(outExp, func = function replaceCrefNode(node = i, value = arg));
+          arg := inlineCallExp(arg, forceInline);
+          exp := Expression.map(exp, func = function replaceCrefNode(node = i, value = arg));
         end for;
       then
-        outExp;
+        exp;
+
+    // Normal function
+    case Call.TYPED_CALL(fn = fn as Function.FUNCTION(inputs = inputs, outputs = outputs, locals = locals),
+                         arguments = args)
+      algorithm
+        body := Function.getBody(fn);
+
+        // This function can so far only handle functions with at most one
+        // statement and output and no local variables.
+        if listLength(body) > 1 or listLength(outputs) <> 1 or listLength(locals) > 0 then
+          exp := Expression.CALL(call);
+          return;
+        end if;
+
+        if listEmpty(body) then
+          stmt := makeOutputStatement(listHead(outputs));
+        else
+          stmt := listHead(body);
+        end if;
+
+        if not Statement.isAssignment(stmt) then
+          exp := Expression.CALL(call);
+          return;
+        end if;
+
+        Error.assertion(listLength(inputs) == listLength(args),
+          getInstanceName() + " got wrong number of arguments for " +
+          AbsynUtil.pathString(Function.name(fn)), sourceInfo());
+
+        try
+          // TODO: Instead of repeating this for each input we should probably
+          //       just build a lookup tree or hash table and go through the
+          //       statement once.
+          for i in inputs loop
+            arg :: args := args;
+            arg := inlineCallExp(arg, forceInline);
+            stmt := Statement.mapExp(stmt,
+              function Expression.map(func = function replaceCrefNode(node = i, value = arg)));
+          end for;
+
+          exp := getOutputExp(stmt, listHead(outputs), call);
+          exp := inlineCallExp(exp, forceInline);
+        else
+          exp := Expression.CALL(call);
+        end try;
+      then
+        exp;
+
+    else Expression.CALL(call);
   end match;
-end inlineRecordConstructorCall;
+end inlineCall;
 
 protected
 function replaceCrefNode
@@ -167,13 +180,9 @@ protected
   Type ty, repl_ty;
 algorithm
   exp := match exp
-
-    // TODO: This only works for simple crefs, for complex crefs (i.e. records)
-    //       we need to somehow replace the rest of the cref with nodes from the
-    //       record.
-    case Expression.CREF(cref = ComponentRef.CREF(node = cr_node, subscripts = subs, restCref = rest_cr))
-      guard InstNode.refEqual(node, cr_node) and not ComponentRef.isFromCref(rest_cr)
-      then Expression.applySubscripts(subs, value);
+    case Expression.CREF()
+      guard InstNode.refEqual(ComponentRef.node(ComponentRef.firstNonScope(exp.cref)), node)
+      then replaceCrefNode2(exp.cref, node, value);
 
     else exp;
   end match;
@@ -186,6 +195,23 @@ algorithm
     exp := Expression.setType(repl_ty, exp);
   end if;
 end replaceCrefNode;
+
+function replaceCrefNode2
+  input ComponentRef cref;
+  input InstNode node;
+  input output Expression value;
+protected
+  list<Subscript> subs;
+  ComponentRef rest_cr;
+  Type ty;
+algorithm
+  if not InstNode.refEqual(node, ComponentRef.node(cref)) then
+    value := replaceCrefNode2(ComponentRef.rest(cref), node, value);
+    value := Expression.recordElement(InstNode.name(ComponentRef.node(cref)), value);
+  end if;
+
+  value := Expression.applySubscripts(ComponentRef.getSubscripts(cref), value);
+end replaceCrefNode2;
 
 function replaceDimExp
   input output Dimension dim;
@@ -205,6 +231,24 @@ algorithm
     else dim;
   end match;
 end replaceDimExp;
+
+function makeOutputStatement
+  input InstNode outputNode;
+  output Statement stmt;
+protected
+  Binding binding;
+  Expression cref_exp, binding_exp;
+algorithm
+  binding := Component.getImplicitBinding(InstNode.component(outputNode));
+
+  if Binding.isBound(binding) then
+    cref_exp := Expression.fromCref(ComponentRef.fromNode(outputNode, Type.UNKNOWN()));
+    binding_exp := Binding.getExp(binding);
+    stmt := Statement.makeAssignment(cref_exp, binding_exp, Type.UNKNOWN(), DAE.emptyElementSource);
+  else
+    stmt := Statement.FAILURE({}, DAE.emptyElementSource);
+  end if;
+end makeOutputStatement;
 
 function getOutputExp
   input Statement stmt;

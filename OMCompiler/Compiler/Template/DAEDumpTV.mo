@@ -368,6 +368,16 @@ package DAE
       ElementSource source "the origin of the component/equation/algorithm";
     end WHEN_EQUATION;
 
+    record INITIAL_FOR_EQUATION " a for-equation"
+      Type type_ "this is the type of the iterator";
+      Boolean iterIsArray "True if the iterator has an array type, otherwise false.";
+      Ident iter "the iterator variable";
+      Integer index "the index of the iterator variable, to make it unique; used by the new inst";
+      Exp range "range for the loop";
+      list<Element> equations "Equations" ;
+      ElementSource source "the origin of the component/equation/algorithm" ;
+    end INITIAL_FOR_EQUATION;
+
     record FOR_EQUATION " a for-equation"
       Type type_ "this is the type of the iterator";
       Boolean iterIsArray "True if the iterator has an array type, otherwise false.";
@@ -516,6 +526,14 @@ package DAE
       list<Statement> statementLst;
       ElementSource source;
     end STMT_FOR;
+
+    record STMT_PARFOR
+      Boolean iterIsArray;
+      Ident iter;
+      Exp range;
+      list<Statement> statementLst;
+      ElementSource source;
+    end STMT_PARFOR;
 
     record STMT_WHILE
       Exp exp;
@@ -855,6 +873,7 @@ package DAE
     record GIVEN end GIVEN;
     record SOUGHT end SOUGHT;
     record REFINE end REFINE;
+    record PROPAGATE end PROPAGATE;
   end Uncertainty;
 
   uniontype Distribution
@@ -979,6 +998,11 @@ package DAE
       ComponentRef inputParam "The input parameter the inverse is for";
       Exp inverseCall "The inverse function call";
     end FUNCTION_INVERSE;
+
+    record FUNCTION_PARTIAL_DERIVATIVE
+      Absyn.Path derivedFunction;
+      list<String> derivedVars;
+    end FUNCTION_PARTIAL_DERIVATIVE;
   end FunctionDefinition;
 
   uniontype derivativeCond "Different conditions on derivatives"
@@ -1471,11 +1495,19 @@ end System;
 
 package Flags
   uniontype ConfigFlag end ConfigFlag;
+  uniontype DebugFlag end DebugFlag;
   constant ConfigFlag MODELICA_OUTPUT;
+  constant DebugFlag PRINT_RECORD_TYPES;
+
   function getConfigBool
     input ConfigFlag inFlag;
     output Boolean outValue;
   end getConfigBool;
+
+  function isSet
+    input DebugFlag inFlag;
+    output Boolean outValue;
+  end isSet;
 end Flags;
 
 end DAEDumpTV;

@@ -16,9 +16,11 @@ clockedSolverTest.mos \
 clockedTypesTest.mos \
 clockedTest.mos \
 externalArrayInputTest.mos \
+externalRecordTest.mos \
 mathFunctionsTest.mos \
 mslDistributionsTest.mos \
 mslElectricalMachinesTest.mos \
+mslElectricalMachinesTestDAE.mos \
 mslElectricalSensorsTest.mos \
 mslMathFFT1Test.mos \
 nameClashTest.mos \
@@ -26,17 +28,21 @@ functionPointerTest.mos \
 recordTupleReturnTest.mos \
 RefArrayDim2.mos \
 solveTest.mos \
+solveOneNonlinearEquationTest.mos \
 testArrayEquations.mos \
+testDAE.mos \
 testMatrixIO.mos \
 testMatrixState.mos \
+testRecordStartValue.mos \
+testReduction.mos \
 testVectorizedBlocks.mos \
-testVectorizedPowerSystem.mos \
 testVectorizedSolarSystem.mos \
 trapezoidTest.mos \
 negatedParameter.mos
 
 FAILINGTESTFILES= \
 ClockInterval.mos \
+testVectorizedPowerSystem.mos \
 
 # Dependency files that are not .mo .mos or Makefile
 # Add them here or they will be cleaned.

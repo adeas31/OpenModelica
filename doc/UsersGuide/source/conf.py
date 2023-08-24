@@ -23,7 +23,13 @@ from datetime import date
 sys.setrecursionlimit(2000)
 
 if not 'OPENMODELICAHOME' in os.environ:
-  os.environ['OPENMODELICAHOME'] = os.path.realpath('../../../build')
+  if os.path.isdir('../../../build_cmake/install'):
+    os.environ['OPENMODELICAHOME'] = os.path.realpath('../../../build_cmake/install')
+  elif os.path.isdir('../../../install_cmake'):
+    os.environ['OPENMODELICAHOME'] = os.path.realpath('../../../install_cmake')
+  else:
+    os.environ['OPENMODELICAHOME'] = os.path.realpath('../../../build')
+
 os.environ['PATH'] = "%s/bin:%s" % (os.environ['OPENMODELICAHOME'],os.environ['PATH'])
 
 # If extensions (or modules to document with autodoc) are in another directory,
@@ -46,7 +52,6 @@ extensions = [
     'sphinx.ext.ifconfig',
     'sphinx.ext.imgmath',
     'sphinxcontrib.bibtex',
-    'sphinxcontrib.inlinesyntaxhighlight',
     'sphinxcontrib.programoutput',
     'sphinxcontribopenmodelica'
 ]
@@ -129,7 +134,7 @@ open("omreleaselink.inc", "w").write(releaselink)
 #
 # This is also used if you do content translation via gettext catalogs.
 # Usually you set "language" from the command line for these cases.
-language = None
+language = 'en'
 
 # There are two options for replacing |today|: either, you set today to some
 # non-false value, then it is used:
@@ -173,22 +178,20 @@ todo_include_todos = True
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
-import alabaster
-html_theme_path = [alabaster.get_path()]
 html_theme = 'alabaster'
+
+# Theme options are theme-specific and customize the look and feel of a theme
+# further.  For a list of options available for each theme, see the
+# documentation.
 html_theme_options = {
   "logo" : "../_images/logo.svg",
   "logo_name" : "OpenModelica",
   "font_family" : "Arial, Helvetica, sans-serif, 'goudy old style', 'minion pro', 'bell mt', Georgia, 'Hiragino Mincho Pro', serif",
 }
 
-# Theme options are theme-specific and customize the look and feel of a theme
-# further.  For a list of options available for each theme, see the
-# documentation.
-#html_theme_options = {}
-
 # Add any paths that contain custom themes here, relative to this directory.
-#html_theme_path = []
+import alabaster
+html_theme_path = [alabaster.get_path()]
 
 # The name for this set of Sphinx documents.  If None, it defaults to
 # "<project> v<release> documentation".
@@ -227,7 +230,15 @@ html_static_path = ['_static']
 smartquotes = False
 
 # Custom sidebar templates, maps document names to template names.
-#html_sidebars = {}
+html_sidebars = {
+    '**': [
+        'about.html',
+        'searchbox.html',
+        'navigation.html',
+        'relations.html',
+        'donate.html',
+    ]
+}
 
 # Additional templates that should be rendered to pages, maps page names to
 # template names.
@@ -439,3 +450,5 @@ numfig_format = {'figure': "Figure %s", 'table': "Table %s", 'code-block': "List
 
 highlight_language = 'modelica'
 imgmath_image_format = 'svg'
+
+bibtex_bibfiles = ['openmodelica.bib', 'extrarefs.bib']

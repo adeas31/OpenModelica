@@ -501,7 +501,7 @@ algorithm
       DAE.InstDims arrayDim;
       Option<DAE.VariableAttributes> values,values1;
       Option<BackendDAE.TearingSelect> ts;
-      DAE.Exp hideResult;
+      Option<DAE.Exp> hideResult;
       Option<SCode.Comment> comment;
       DAE.ConnectorType ct;
       DAE.ElementSource source;
@@ -514,7 +514,7 @@ algorithm
     case BackendDAE.VAR(varName,varKind,varDirection,varParallelism,varType,bind,tplExp,arrayDim,source,values,ts,hideResult,comment,ct,io,unreplaceable) equation
       (bind,source,b1) = Inline.inlineExpOpt(bind,inElementList,source);
       (values1,source,b2) = Inline.inlineStartAttribute(values,source,inElementList);
-    then (BackendDAE.VAR(varName,varKind,varDirection,varParallelism,varType,bind,tplExp,arrayDim,source,values1,ts,hideResult,comment,ct,io,unreplaceable), b1 or b2);
+    then (BackendDAE.VAR(varName,varKind,varDirection,varParallelism,varType,bind,tplExp,arrayDim,source,values1,ts,hideResult,comment,ct,io,unreplaceable,false), b1 or b2);
 
     else (inVar, false);
   end match;
@@ -558,13 +558,12 @@ algorithm
   zc := match zc
     local
       DAE.Exp e, e_1;
-      list<Integer> ilst1;
       Boolean b;
 
-    case BackendDAE.ZERO_CROSSING(e, ilst1)
+    case BackendDAE.ZERO_CROSSING(relation_ = e)
       equation
         (e_1, _,_, _) = Inline.inlineExp(e, fns, DAE.emptyElementSource/*TODO: Propagate operation info*/);
-      then if not referenceEq(e,e_1) then BackendDAE.ZERO_CROSSING(e_1, ilst1) else zc;
+      then if not referenceEq(e,e_1) then BackendDAE.ZERO_CROSSING(zc.index, e_1, zc.occurEquLst, zc.iter) else zc;
 
     else zc;
   end match;

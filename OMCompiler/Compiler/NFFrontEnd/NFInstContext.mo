@@ -37,29 +37,32 @@ encapsulated package NFInstContext
   // Flag values:
   constant Type NO_CONTEXT      = 0;
   constant Type RELAXED         = intBitLShift(1,  0); // Relaxed instantiation, used by e.g. checkModel.
-  constant Type CLASS           = intBitLShift(1,  1); // In class.
-  constant Type FUNCTION        = intBitLShift(1,  2); // In function.
-  constant Type REDECLARED      = intBitLShift(1,  3); // In an element that will be replaced with a redeclare.
-  constant Type ALGORITHM       = intBitLShift(1,  4); // In algorithm section.
-  constant Type EQUATION        = intBitLShift(1,  5); // In equation section.
-  constant Type INITIAL         = intBitLShift(1,  6); // In initial section.
-  constant Type LHS             = intBitLShift(1,  7); // On left hand side of equality/assignment.
-  constant Type RHS             = intBitLShift(1,  8); // On right hand side of equality/assignment.
-  constant Type WHEN            = intBitLShift(1,  9); // In when equation/statement.
-  constant Type CLOCKED         = intBitLShift(1, 10); // Part of a clocked when equation.
-  constant Type FOR             = intBitLShift(1, 11); // In a for loop.
-  constant Type IF              = intBitLShift(1, 12); // In an if equation/statement.
-  constant Type WHILE           = intBitLShift(1, 13); // In a while loop.
-  constant Type NONEXPANDABLE   = intBitLShift(1, 14); // In non-parameter if/for.
-  constant Type ITERATION_RANGE = intBitLShift(1, 15); // In range used for iteration.
-  constant Type DIMENSION       = intBitLShift(1, 16); // In dimension.
-  constant Type BINDING         = intBitLShift(1, 17); // In binding.
-  constant Type CONDITION       = intBitLShift(1, 18); // In conditional expression.
-  constant Type SUBSCRIPT       = intBitLShift(1, 19); // In subscript.
-  constant Type SUBEXPRESSION   = intBitLShift(1, 20); // Part of a larger expression.
-  constant Type CONNECT         = intBitLShift(1, 21); // Part of connect argument.
-  constant Type NOEVENT         = intBitLShift(1, 22); // Part of noEvent argument.
-  constant Type ASSERT          = intBitLShift(1, 23); // Part of assert argument.
+  constant Type INSTANCE_API    = intBitLShift(1,  1); // Instantiation for the model instance API.
+  constant Type FAST_LOOKUP     = intBitLShift(1,  2); // Only expand packages when doing lookup.
+  constant Type CLASS           = intBitLShift(1,  3); // In class.
+  constant Type FUNCTION        = intBitLShift(1,  4); // In function.
+  constant Type REDECLARED      = intBitLShift(1,  5); // In an element that will be replaced with a redeclare.
+  constant Type ALGORITHM       = intBitLShift(1,  6); // In algorithm section.
+  constant Type EQUATION        = intBitLShift(1,  7); // In equation section.
+  constant Type INITIAL         = intBitLShift(1,  8); // In initial section.
+  constant Type LHS             = intBitLShift(1,  9); // On left hand side of equality/assignment.
+  constant Type RHS             = intBitLShift(1, 10); // On right hand side of equality/assignment.
+  constant Type WHEN            = intBitLShift(1, 11); // In when equation/statement.
+  constant Type CLOCKED         = intBitLShift(1, 12); // Part of a clocked when equation.
+  constant Type FOR             = intBitLShift(1, 13); // In a for loop.
+  constant Type IF              = intBitLShift(1, 14); // In an if equation/statement.
+  constant Type WHILE           = intBitLShift(1, 15); // In a while loop.
+  constant Type NONEXPANDABLE   = intBitLShift(1, 16); // In non-parameter if/for.
+  constant Type ITERATION_RANGE = intBitLShift(1, 17); // In range used for iteration.
+  constant Type DIMENSION       = intBitLShift(1, 18); // In dimension.
+  constant Type BINDING         = intBitLShift(1, 19); // In binding.
+  constant Type CONDITION       = intBitLShift(1, 20); // In conditional expression.
+  constant Type SUBSCRIPT       = intBitLShift(1, 21); // In subscript.
+  constant Type SUBEXPRESSION   = intBitLShift(1, 22); // Part of a larger expression.
+  constant Type CONNECT         = intBitLShift(1, 23); // Part of connect argument.
+  constant Type NOEVENT         = intBitLShift(1, 24); // Part of noEvent argument.
+  constant Type ASSERT          = intBitLShift(1, 25); // Part of assert argument.
+  constant Type ANNOTATION      = intBitLShift(1, 26); // Part of an annotation.
 
   // Combined flags:
   constant Type EQ_SUBEXPRESSION = intBitOr(EQUATION, SUBEXPRESSION);
@@ -74,6 +77,15 @@ encapsulated package NFInstContext
     newOrigin := intBitOr(context, flag);
     annotation(__OpenModelica_EarlyInline=true);
   end set;
+
+  function unset
+    input Type context;
+    input Type flag;
+    output Type newOrigin;
+  algorithm
+    newOrigin := intBitAnd(context, intBitNot(flag));
+    annotation(__OpenModelica_EarlyInline=true);
+  end unset;
 
   function isSet
     input Type context;
@@ -97,6 +109,16 @@ encapsulated package NFInstContext
     input Type context;
     output Boolean res = intBitAnd(context, RELAXED) > 0;
   end inRelaxed;
+
+  function inInstanceAPI
+    input Type context;
+    output Boolean res = intBitAnd(context, INSTANCE_API) > 0;
+  end inInstanceAPI;
+
+  function inFastLookup
+    input Type context;
+    output Boolean res = intBitAnd(context, FAST_LOOKUP) > 0;
+  end inFastLookup;
 
   function inClass
     input Type context;
@@ -212,6 +234,11 @@ encapsulated package NFInstContext
     input Type context;
     output Boolean res = intBitAnd(context, ASSERT) > 0;
   end inAssert;
+
+  function inAnnotation
+    input Type context;
+    output Boolean res = intBitAnd(context, ANNOTATION) > 0;
+  end inAnnotation;
 
   function inValidTypenameScope
     input Type context;

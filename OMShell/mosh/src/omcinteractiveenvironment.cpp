@@ -42,10 +42,6 @@
 #include "gc.h"
 
 extern "C" {
-void (*omc_assert)(threadData_t*,FILE_INFO info,const char *msg,...) __attribute__((noreturn)) = omc_assert_function;
-void (*omc_assert_warning)(FILE_INFO info,const char *msg,...) = omc_assert_warning_function;
-void (*omc_terminate)(FILE_INFO info,const char *msg,...) = omc_terminate_function;
-void (*omc_throw)(threadData_t*) __attribute__ ((noreturn)) = omc_throw_function;
 int omc_Main_handleCommand(void *threadData, void *imsg, void **omsg);
 modelica_metatype omc_Main_init(void *threadData, modelica_metatype args);
 modelica_metatype omc_Main_readSettings(void *threadData, modelica_metatype args);
@@ -166,10 +162,8 @@ static bool contains(std::string s1, std::string s2);
     if( error_.size() > 2 ) {
       if (contains(error_,"Error:")) {
         severity = 2;
-        error_ = "OMC-ERROR: \n" + error_;
       } else if (contains(error_,"Warning:")) {
         severity = 1;
-        error_ = "OMC-WARNING: \n" + error_;
       } else {
         severity = 0;
       }

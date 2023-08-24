@@ -153,11 +153,11 @@ int getAnalyticalJacobianLapack(DATA* data, threadData_t *threadData, double* ja
 /*! \fn wrapper_fvec_lapack for the residual function
  *
  */
-static int wrapper_fvec_lapack(_omc_vector* x, _omc_vector* f, int* iflag, void** data, int sysNumber)
+static int wrapper_fvec_lapack(_omc_vector* x, _omc_vector* f, int* iflag, RESIDUAL_USERDATA* resUserData, int sysNumber)
 {
   int currentSys = sysNumber;
 
-  (*((DATA*)data[0])->simulationInfo->linearSystemData[currentSys].residualFunc)(data, x->data, f->data, iflag);
+  resUserData->data->simulationInfo->linearSystemData[currentSys].residualFunc(resUserData, x->data, f->data, iflag);
   return 0;
 }
 
@@ -170,7 +170,7 @@ static int wrapper_fvec_lapack(_omc_vector* x, _omc_vector* f, int* iflag, void*
  */
 int solveLapack(DATA *data, threadData_t *threadData, int sysNumber, double* aux_x)
 {
-  void *dataAndThreadData[2] = {data, threadData};
+  RESIDUAL_USERDATA resUserData = {.data=data, .threadData=threadData, .solverData=NULL};
   int i, iflag = 1;
   LINEAR_SYSTEM_DATA* systemData = &(data->simulationInfo->linearSystemData[sysNumber]);
 
@@ -185,7 +185,7 @@ int solveLapack(DATA *data, threadData_t *threadData, int sysNumber, double* aux
   double tmpJacEvalTime;
   int reuseMatrixJac = (data->simulationInfo->currentContext == CONTEXT_SYM_JACOBIAN && data->simulationInfo->currentJacobianEval > 0);
 
-  infoStreamPrintWithEquationIndexes(LOG_LS, 0, indexes, "Start solving Linear System %d (size %d) at time %g with Lapack Solver",
+  infoStreamPrintWithEquationIndexes(LOG_LS, omc_dummyFileInfo, 0, indexes, "Start solving Linear System %d (size %d) at time %g with Lapack Solver",
          eqSystemNumber, (int) systemData->size,
          data->localData[0]->timeValue);
 
@@ -219,7 +219,7 @@ int solveLapack(DATA *data, threadData_t *threadData, int sysNumber, double* aux
     /* calculate vector b (rhs) */
     _omc_copyVector(solverData->work, solverData->x);
 
-    wrapper_fvec_lapack(solverData->work, solverData->b, &iflag, dataAndThreadData, sysNumber);
+    wrapper_fvec_lapack(solverData->work, solverData->b, &iflag, &resUserData, sysNumber);
   }
   tmpJacEvalTime = rt_ext_tp_tock(&(solverData->timeClock));
   systemData->jacobianTime += tmpJacEvalTime;
@@ -273,9 +273,9 @@ int solveLapack(DATA *data, threadData_t *threadData, int sysNumber, double* aux
   }
   else if(solverData->info > 0)
   {
-    warningStreamPrint(LOG_LS, 0,
-        "Failed to solve linear system of equations (no. %d) at time %f, system is singular for U[%d, %d].",
-        (int)systemData->equationIndex, data->localData[0]->timeValue, (int)solverData->info+1, (int)solverData->info+1);
+    warningStreamPrintWithLimit(LOG_LS, 0, ++(systemData->numberOfFailures) /* Update counter */, data->simulationInfo->maxWarnDisplays,
+                                "Failed to solve linear system of equations (no. %d) at time %f, system is singular for U[%d, %d].",
+                                (int)systemData->equationIndex, data->localData[0]->timeValue, (int)solverData->info+1, (int)solverData->info+1);
 
     success = 0;
 
@@ -294,13 +294,13 @@ int solveLapack(DATA *data, threadData_t *threadData, int sysNumber, double* aux
       solverData->x = _omc_addVectorVector(solverData->x, solverData->work, solverData->b); // x = xold(work) + xnew(b)
 
       /* update inner equations */
-      wrapper_fvec_lapack(solverData->x, solverData->work, &iflag, dataAndThreadData, sysNumber);
+      wrapper_fvec_lapack(solverData->x, solverData->work, &iflag, &resUserData, sysNumber);
       residualNorm = _omc_euclideanVectorNorm(solverData->work);
 
       if ((isnan(residualNorm)) || (residualNorm>1e-4)){
-        warningStreamPrint(LOG_LS, 0,
-            "Failed to solve linear system of equations (no. %d) at time %f. Residual norm is %.15g.",
-            (int)systemData->equationIndex, data->localData[0]->timeValue, residualNorm);
+        warningStreamPrintWithLimit(LOG_LS, 0, ++(systemData->numberOfFailures) /* Update counter */, data->simulationInfo->maxWarnDisplays,
+                                    "Failed to solve linear system of equations (no. %d) at time %f. Residual norm is %.15g.",
+                                    (int)systemData->equationIndex, data->localData[0]->timeValue, residualNorm);
         success = 0;
       }
     } else {

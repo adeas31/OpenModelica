@@ -91,7 +91,7 @@ type HashVector = array<HashNode>;
 type ValueArray = tuple<Integer, Integer, array<Option<HashEntry>>>;
 type FuncsTuple = tuple<FuncHash, FuncEq, FuncKeyString, FuncValString>;
 
-partial function FuncHash input Key key; input Integer mod; output Integer hash; end FuncHash;
+partial function FuncHash input Key key; output Integer hash; end FuncHash;
 partial function FuncEq input Key key1; input Key key2; output Boolean b; end FuncEq;
 partial function FuncKeyString input Key key; output String str; end FuncKeyString;
 partial function FuncValString input Value val; output String str; end FuncValString;
@@ -113,16 +113,12 @@ protected
   list<Option<tuple<Key,Value>>> lst;
   array<Option<tuple<Key,Value>>> emptyarr;
 protected
-  Integer szArr;
+  Integer szArr, szBucketFixed = intMax(szBucket, 1);
 algorithm
-  if szBucket < 1 then
-    Error.addInternalError("Got internal hash table size " + intString(szBucket) + " <1", sourceInfo());
-    fail();
-  end if;
-  arr := arrayCreate(szBucket, {});
-  szArr := bucketToValuesSize(szBucket);
+  arr := arrayCreate(szBucketFixed, {});
+  szArr := bucketToValuesSize(szBucketFixed);
   emptyarr := arrayCreate(szArr, NONE());
-  hashTable := (arr,(0,szArr,emptyarr),szBucket,fntpl);
+  hashTable := (arr,(0,szArr,emptyarr),szBucketFixed,fntpl);
 end emptyHashTableWork;
 
 public function add
@@ -145,7 +141,7 @@ algorithm
   (key, _) := entry;
   (hashvec, varr, bsize, fntpl as (hashFunc, keyEqual, _, _)) := hashTable;
 
-  hash_idx := hashFunc(key, bsize) + 1;
+  hash_idx := intMod(hashFunc(key), bsize) + 1;
   indices := hashvec[hash_idx];
 
   for i in indices loop
@@ -206,7 +202,7 @@ algorithm
     case ((v as (key, _)),
        (hashvec, varr, bsize, fntpl as (hashFunc, _, _, _)))
       equation
-        indx = hashFunc(key, bsize)+1;
+        indx = intMod(hashFunc(key), bsize)+1;
         (varr,newpos) = valueArrayAdd(varr, v);
         indexes = hashvec[indx];
         hashvec = arrayUpdate(hashvec, indx, ((key, newpos) :: indexes));
@@ -240,7 +236,7 @@ algorithm
   (key, _) := entry;
   (hashvec, varr, bsize, fntpl as (hashFunc, _, _, _)) := hashTable;
   failure((_) := get(key, hashTable));
-  indx := hashFunc(key, bsize)+1;
+  indx := intMod(hashFunc(key), bsize)+1;
   (varr, newpos) := valueArrayAdd(varr, entry);
   indexes := hashvec[indx];
   hashvec := arrayUpdate(hashvec, indx, ((key, newpos) :: indexes));
@@ -324,6 +320,17 @@ algorithm
   (_, value) := getValueArray(varr, i);
 end get;
 
+public function getOrDefault
+  "Returns a Value given a Key and a HashTable if it exists,
+  otherwise returns the default value."
+  input Key key;
+  input HashTable hashTable;
+  input Value default;
+  output Value value;
+algorithm
+  value := if hasKey(key, hashTable) then get(key, hashTable) else default;
+end getOrDefault;
+
 protected function hasKeyIndex
   "help function to get and hasKey"
   input Key key;
@@ -337,7 +344,7 @@ protected
   FuncHash hashFunc;
 algorithm
   (hashvec, _, bsize, (hashFunc, keyEqual, _, _)) := hashTable;
-  hashindx := hashFunc(key, bsize) + 1;
+  hashindx := intMod(hashFunc(key), bsize) + 1;
   indexes := hashvec[hashindx];
   indx := hasKeyIndex2(key, indexes, keyEqual);
 end hasKeyIndex;
@@ -680,7 +687,7 @@ algorithm
     _ := match arrayGet(vae, i)
       case SOME((key,_))
         algorithm
-          hash_idx := hashFunc(key, bs) + 1;
+          hash_idx := intMod(hashFunc(key), bs) + 1;
           arrayUpdate(hv, hash_idx, {});
           arrayUpdate(vae, i, NONE());
         then ();
@@ -709,7 +716,7 @@ algorithm
       case SOME((key,_))
         algorithm
           if not workaroundForBug then
-            hash_idx := hashFunc(key, bs) + 1;
+            hash_idx := intMod(hashFunc(key), bs) + 1;
             arrayUpdate(hv, hash_idx, {});
           end if;
           arrayUpdate(vae, i, NONE());

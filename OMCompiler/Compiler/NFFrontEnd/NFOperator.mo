@@ -42,48 +42,48 @@ public
 
   type Op = enumeration(
     // Basic arithmetic operators.
-    ADD,               // +
-    SUB,               // -
-    MUL,               // *
-    DIV,               // /
-    POW,               // ^
+    ADD,               //  1: +
+    SUB,               //  2: -
+    MUL,               //  3: *
+    DIV,               //  4: /
+    POW,               //  5: ^
     // Element-wise arithmetic operators. These are only used until the type
     // checking, then replaced with a more specific operator.
-    ADD_EW,            // .+
-    SUB_EW,            // .-
-    MUL_EW,            // .*
-    DIV_EW,            // ./
-    POW_EW,            // .^
+    ADD_EW,            //  6: .+
+    SUB_EW,            //  7: .-
+    MUL_EW,            //  8: .*
+    DIV_EW,            //  9: ./
+    POW_EW,            // 10: .^
     // Scalar-Array and Array-Scalar arithmetic operators.
-    ADD_SCALAR_ARRAY,  // scalar + array
-    ADD_ARRAY_SCALAR,  // array + scalar
-    SUB_SCALAR_ARRAY,  // scalar - array
-    SUB_ARRAY_SCALAR,  // array - scalar
-    MUL_SCALAR_ARRAY,  // scalar * array
-    MUL_ARRAY_SCALAR,  // array * scalar
-    MUL_VECTOR_MATRIX, // vector * matrix
-    MUL_MATRIX_VECTOR, // matrix * vector
-    SCALAR_PRODUCT,    // vector * vector
-    MATRIX_PRODUCT,    // matrix * matrix
-    DIV_SCALAR_ARRAY,  // scalar / array
-    DIV_ARRAY_SCALAR,  // array / scalar
-    POW_SCALAR_ARRAY,  // scalar ^ array
-    POW_ARRAY_SCALAR,  // array ^ scalar
-    POW_MATRIX,        // matrix ^ Integer
+    ADD_SCALAR_ARRAY,  // 11: scalar + array
+    ADD_ARRAY_SCALAR,  // 12: array + scalar
+    SUB_SCALAR_ARRAY,  // 13: scalar - array
+    SUB_ARRAY_SCALAR,  // 14: array - scalar
+    MUL_SCALAR_ARRAY,  // 15: scalar * array
+    MUL_ARRAY_SCALAR,  // 16: array * scalar
+    MUL_VECTOR_MATRIX, // 17: vector * matrix
+    MUL_MATRIX_VECTOR, // 18: matrix * vector
+    SCALAR_PRODUCT,    // 19: vector * vector
+    MATRIX_PRODUCT,    // 20: matrix * matrix
+    DIV_SCALAR_ARRAY,  // 21: scalar / array
+    DIV_ARRAY_SCALAR,  // 22: array / scalar
+    POW_SCALAR_ARRAY,  // 23: scalar ^ array
+    POW_ARRAY_SCALAR,  // 24: array ^ scalar
+    POW_MATRIX,        // 25: matrix ^ Integer
     // Unary arithmetic operators.
-    UMINUS,            // -
+    UMINUS,            // 26: -
     // Logic operators.
-    AND,               // and
-    OR,                // or
-    NOT,               // not
+    AND,               // 27: and
+    OR,                // 28: or
+    NOT,               // 29: not
     // Relational operators.
-    LESS,              // <
-    LESSEQ,            // <=
-    GREATER,           // >
-    GREATEREQ,         // >=
-    EQUAL,             // ==
-    NEQUAL,            // <>
-    USERDEFINED        // Overloaded operator.
+    LESS,              // 30: <
+    LESSEQ,            // 31: <=
+    GREATER,           // 32: >
+    GREATEREQ,         // 33: >=
+    EQUAL,             // 34: ==
+    NEQUAL,            // 35: <>
+    USERDEFINED        // 36: Overloaded operator.
   );
 
   record OPERATOR
@@ -101,6 +101,136 @@ public
     // TODO: Compare the types instead if both operators are USERDEFINED.
     comp := Util.intCompare(Integer(o1), Integer(o2));
   end compare;
+
+  function invert
+    input output Operator operator;
+  algorithm
+    operator.op := match operator.op
+      case Op.ADD then Op.SUB;
+      case Op.SUB then Op.ADD;
+      case Op.MUL then Op.DIV;
+      case Op.DIV then Op.MUL;
+      case Op.ADD_EW then Op.SUB_EW;
+      case Op.SUB_EW then Op.ADD_EW;
+      case Op.MUL_EW then Op.DIV_EW;
+      case Op.DIV_EW then Op.MUL_EW;
+      case Op.ADD_SCALAR_ARRAY then Op.SUB_SCALAR_ARRAY;
+      case Op.ADD_ARRAY_SCALAR then Op.SUB_ARRAY_SCALAR;
+      case Op.SUB_SCALAR_ARRAY then Op.ADD_SCALAR_ARRAY;
+      case Op.SUB_ARRAY_SCALAR then Op.ADD_ARRAY_SCALAR;
+      case Op.MUL_SCALAR_ARRAY then Op.DIV_SCALAR_ARRAY;
+      case Op.MUL_ARRAY_SCALAR then Op.DIV_ARRAY_SCALAR;
+      case Op.DIV_SCALAR_ARRAY then Op.MUL_SCALAR_ARRAY;
+      case Op.DIV_ARRAY_SCALAR then Op.MUL_ARRAY_SCALAR;
+      case Op.LESS             then Op.GREATEREQ;
+      case Op.LESSEQ           then Op.GREATER;
+      case Op.GREATER          then Op.LESSEQ;
+      case Op.GREATEREQ        then Op.LESS;
+      case Op.EQUAL            then Op.EQUAL;
+      case Op.NEQUAL           then Op.NEQUAL;
+      // ToDo: should POW return POW? exponent should be negated
+      else algorithm
+        Error.addMessage(Error.INTERNAL_ERROR,{getInstanceName() + "Failed! Don't know how to invert: " + symbol(operator)});
+      then fail();
+    end match;
+  end invert;
+
+  function typeRestriction
+    input Type ty;
+    output Integer i;
+  algorithm
+    if Type.isScalar(ty) then
+      i := 0;
+    elseif Type.isVector(ty) then
+      i := 1;
+    elseif Type.isMatrix(ty) then
+      i := 2;
+    elseif Type.isArray(ty) then
+      i := 3;
+    else
+      i := 4;
+    end if;
+  end typeRestriction;
+
+  function repairMultary
+    input output Operator operator;
+    input list<Type> types;
+  protected
+    MathClassification mc = getMathClassification(operator);
+    SizeClassification sc;
+    list<Integer> lst;
+    Integer i2;
+    Type ty;
+  algorithm
+    lst := list(typeRestriction(i) for i in types);
+    i2 := List.first(lst);
+    if List.all(lst, function intEq(i2=i2)) then
+      ty := List.first(types);
+      sc := match i2
+        case 0 then SizeClassification.SCALAR;
+        case 1 then SizeClassification.ELEMENT_WISE;
+        else getSizeClassification(operator);
+      end match;
+    else
+      Error.assertion(false, getInstanceName() + " failed because the multary arguments have incompatible sizes: "
+       + List.toString(types, Type.toString), sourceInfo());
+      fail();
+    end if;
+    operator := fromClassification((mc, sc), ty);
+  end repairMultary;
+
+  function repairBinary
+    input output Operator operator;
+    input Type ty1;
+    input Type ty2;
+  protected
+    MathClassification mc = getMathClassification(operator);
+    SizeClassification sc;
+    Type ty;
+  algorithm
+    (sc, ty) := match (typeRestriction(ty1), typeRestriction(ty2))
+      local
+        Integer i1, i2;
+      case (0, 0)                 then (SizeClassification.SCALAR, ty1);
+      case (0, i2) guard(i2>0)    then (SizeClassification.SCALAR_ARRAY, ty2);
+      case (i1, 0) guard(i1>0)    then (SizeClassification.ARRAY_SCALAR, ty1);
+      case (1, 2)                 then (SizeClassification.VECTOR_MATRIX, ty2);
+      case (2, 1)                 then (SizeClassification.MATRIX_VECTOR, ty1);
+      case (i1, i2) guard(i1==i2) then (getSizeClassification(operator), ty1);
+      else algorithm
+        Error.assertion(false, getInstanceName() + " failed because the binary arguments have incompatible sizes: "
+          + Type.toString(ty1) + ", " + Type.toString(ty2), sourceInfo());
+      then fail();
+    end match;
+    operator := fromClassification((mc, sc), ty);
+  end repairBinary;
+
+  function isLogical
+    input Operator operator;
+    output Boolean b;
+  algorithm
+    b := match operator.op
+      case Op.AND   then true;
+      case Op.OR    then true;
+      case Op.NOT   then true;
+                    else false;
+    end match;
+  end isLogical;
+
+  function isRelational
+    input Operator operator;
+    output Boolean b;
+  algorithm
+    b := match operator.op
+      case Op.LESS      then true;
+      case Op.LESSEQ    then true;
+      case Op.GREATER   then true;
+      case Op.GREATEREQ then true;
+      case Op.EQUAL     then true;
+      case Op.NEQUAL    then true;
+                        else false;
+    end match;
+  end isRelational;
 
   function fromAbsyn
     input Absyn.Operator inOperator;
@@ -315,28 +445,33 @@ public
     output Integer priority;
   algorithm
     priority := match op.op
-      case Op.ADD              then if lhs then 5 else 6;
-      case Op.SUB              then 5;
-      case Op.MUL              then 2;
-      case Op.DIV              then 2;
-      case Op.POW              then 1;
-      case Op.ADD_EW           then if lhs then 5 else 6;
-      case Op.SUB_EW           then 5;
-      case Op.MUL_EW           then if lhs then 2 else 3;
-      case Op.DIV_EW           then 2;
-      case Op.POW_EW           then 1;
-      //case MUL_ARRAY_SCALAR() then if lhs then 2 else 3;
-      //case ADD_ARRAY_SCALAR() then if lhs then 5 else 6;
-      //case SUB_SCALAR_ARRAY() then 5;
-      //case SCALAR_PRODUCT()   then if lhs then 2 else 3;
-      //case MATRIX_PRODUCT()   then if lhs then 2 else 3;
-      //case DIV_ARRAY_SCALAR() then 2;
-      //case DIV_SCALAR_ARRAY() then 2;
-      //case POW_ARRAY_SCALAR() then 1;
-      //case POW_SCALAR_ARRAY() then 1;
-      //case POW_ARR()          then 1;
-      case Op.AND              then 8;
-      case Op.OR               then 9;
+      case Op.ADD               then if lhs then 5 else 6;
+      case Op.SUB               then 5;
+      case Op.MUL               then 2;
+      case Op.DIV               then 2;
+      case Op.POW               then 1;
+      case Op.ADD_EW            then if lhs then 5 else 6;
+      case Op.SUB_EW            then 5;
+      case Op.MUL_EW            then if lhs then 2 else 3;
+      case Op.DIV_EW            then 2;
+      case Op.POW_EW            then 1;
+      case Op.ADD_SCALAR_ARRAY  then if lhs then 5 else 6;
+      case Op.ADD_ARRAY_SCALAR  then if lhs then 5 else 6;
+      case Op.SUB_SCALAR_ARRAY  then 5;
+      case Op.SUB_ARRAY_SCALAR  then 5;
+      case Op.MUL_SCALAR_ARRAY  then if lhs then 2 else 3;
+      case Op.MUL_ARRAY_SCALAR  then if lhs then 2 else 3;
+      case Op.MUL_VECTOR_MATRIX then if lhs then 2 else 3;
+      case Op.MUL_MATRIX_VECTOR then if lhs then 2 else 3;
+      case Op.SCALAR_PRODUCT    then if lhs then 2 else 3;
+      case Op.MATRIX_PRODUCT    then if lhs then 2 else 3;
+      case Op.DIV_SCALAR_ARRAY  then 2;
+      case Op.DIV_ARRAY_SCALAR  then 2;
+      case Op.POW_SCALAR_ARRAY  then 1;
+      case Op.POW_ARRAY_SCALAR  then 1;
+      case Op.POW_MATRIX        then 1;
+      case Op.AND               then 8;
+      case Op.OR                then 9;
       else 0;
     end match;
   end priority;
@@ -527,24 +662,258 @@ public
     end match;
   end isElementWise;
 
-  function negate
-    input Operator op;
-    output Operator outOp;
-  protected
-    Op neg_op;
+  type MathClassification = enumeration(ADDITION, SUBTRACTION, MULTIPLICATION, DIVISION, POWER, LOGICAL, RELATION);
+  type SizeClassification = enumeration(SCALAR, ELEMENT_WISE, ARRAY_SCALAR, SCALAR_ARRAY, MATRIX, VECTOR_MATRIX, MATRIX_VECTOR, LOGICAL, RELATION);
+  type Classification = tuple<MathClassification, SizeClassification>;
+
+  function mathSymbol
+    input MathClassification mcl;
+    output String str;
   algorithm
-    neg_op := match op.op
-      case Op.ADD then Op.SUB;
-      case Op.SUB then Op.ADD;
-      case Op.ADD_EW then Op.SUB_EW;
-      case Op.SUB_EW then Op.ADD_EW;
-      case Op.ADD_SCALAR_ARRAY then Op.SUB_SCALAR_ARRAY;
-      case Op.SUB_SCALAR_ARRAY then Op.ADD_SCALAR_ARRAY;
-      case Op.ADD_ARRAY_SCALAR then Op.SUB_ARRAY_SCALAR;
+    str := match mcl
+      case MathClassification.ADDITION        then "+";
+      case MathClassification.SUBTRACTION     then "-";
+      case MathClassification.MULTIPLICATION  then "*";
+      case MathClassification.DIVISION        then "/";
+      case MathClassification.POWER           then "^";
+      case MathClassification.LOGICAL         then "L";
+      case MathClassification.RELATION        then "R";
+                                              else fail();
+    end match;
+  end mathSymbol;
+
+  function classify
+    input Operator op;
+    output Classification cl;
+  algorithm
+    cl := match op.op
+      case Op.ADD                 then (MathClassification.ADDITION,        SizeClassification.SCALAR);
+      case Op.SUB                 then (MathClassification.SUBTRACTION,     SizeClassification.SCALAR);
+      case Op.MUL                 then (MathClassification.MULTIPLICATION,  SizeClassification.SCALAR);
+      case Op.DIV                 then (MathClassification.DIVISION,        SizeClassification.SCALAR);
+      case Op.POW                 then (MathClassification.POWER,           SizeClassification.SCALAR);
+      case Op.ADD_EW              then (MathClassification.ADDITION,        SizeClassification.ELEMENT_WISE);
+      case Op.SUB_EW              then (MathClassification.SUBTRACTION,     SizeClassification.ELEMENT_WISE);
+      case Op.MUL_EW              then (MathClassification.MULTIPLICATION,  SizeClassification.ELEMENT_WISE);
+      case Op.DIV_EW              then (MathClassification.DIVISION,        SizeClassification.ELEMENT_WISE);
+      case Op.POW_EW              then (MathClassification.POWER,           SizeClassification.ELEMENT_WISE);
+      case Op.MUL_ARRAY_SCALAR    then (MathClassification.MULTIPLICATION,  SizeClassification.ARRAY_SCALAR);
+      case Op.MUL_SCALAR_ARRAY    then (MathClassification.MULTIPLICATION,  SizeClassification.SCALAR_ARRAY);
+      case Op.ADD_ARRAY_SCALAR    then (MathClassification.ADDITION,        SizeClassification.ARRAY_SCALAR);
+      case Op.ADD_SCALAR_ARRAY    then (MathClassification.ADDITION,        SizeClassification.SCALAR_ARRAY);
+      case Op.SUB_ARRAY_SCALAR    then (MathClassification.SUBTRACTION,     SizeClassification.ARRAY_SCALAR);
+      case Op.SUB_SCALAR_ARRAY    then (MathClassification.SUBTRACTION,     SizeClassification.SCALAR_ARRAY);
+      case Op.SCALAR_PRODUCT      then (MathClassification.MULTIPLICATION,  SizeClassification.SCALAR);
+      case Op.MATRIX_PRODUCT      then (MathClassification.MULTIPLICATION,  SizeClassification.MATRIX);
+      case Op.MUL_VECTOR_MATRIX   then (MathClassification.MULTIPLICATION,  SizeClassification.VECTOR_MATRIX);
+      case Op.MUL_MATRIX_VECTOR   then (MathClassification.MULTIPLICATION,  SizeClassification.MATRIX_VECTOR);
+      case Op.DIV_ARRAY_SCALAR    then (MathClassification.DIVISION,        SizeClassification.ARRAY_SCALAR);
+      case Op.DIV_SCALAR_ARRAY    then (MathClassification.DIVISION,        SizeClassification.SCALAR_ARRAY);
+      case Op.POW_ARRAY_SCALAR    then (MathClassification.POWER,           SizeClassification.ARRAY_SCALAR);
+      case Op.POW_SCALAR_ARRAY    then (MathClassification.POWER,           SizeClassification.SCALAR_ARRAY);
+      case Op.POW_MATRIX          then (MathClassification.POWER,           SizeClassification.MATRIX);
+      case Op.AND                 then (MathClassification.LOGICAL,         SizeClassification.LOGICAL);
+      case Op.OR                  then (MathClassification.LOGICAL,         SizeClassification.LOGICAL);
+      case Op.NOT                 then (MathClassification.LOGICAL,         SizeClassification.LOGICAL);
+      case Op.LESS                then (MathClassification.RELATION,        SizeClassification.RELATION);
+      case Op.LESSEQ              then (MathClassification.RELATION,        SizeClassification.RELATION);
+      case Op.GREATER             then (MathClassification.RELATION,        SizeClassification.RELATION);
+      case Op.GREATEREQ           then (MathClassification.RELATION,        SizeClassification.RELATION);
+      case Op.EQUAL               then (MathClassification.RELATION,        SizeClassification.RELATION);
+      case Op.NEQUAL              then (MathClassification.RELATION,        SizeClassification.RELATION);
+      else algorithm
+        Error.addInternalError(getInstanceName() + ": Don't know how to handle " + String(op.op), sourceInfo());
+      then fail();
+    end match;
+  end classify;
+
+  function fromClassification
+    "Only works for non-logical operators!"
+    input Classification cl "mathematical and size classification";
+    input Type ty           "Type information";
+    output Operator result        "Resulting operator";
+  protected
+    Op op;
+  algorithm
+    op := match cl
+      case (MathClassification.ADDITION,        SizeClassification.SCALAR)                  then Op.ADD;
+      case (MathClassification.SUBTRACTION,     SizeClassification.SCALAR)                  then Op.SUB;
+      case (MathClassification.MULTIPLICATION,  SizeClassification.SCALAR)                  then Op.MUL;
+      case (MathClassification.DIVISION,        SizeClassification.SCALAR)                  then Op.DIV;
+      case (MathClassification.POWER,           SizeClassification.SCALAR)                  then Op.POW;
+      case (MathClassification.ADDITION,        SizeClassification.ELEMENT_WISE)            then Op.ADD_EW;
+      case (MathClassification.SUBTRACTION,     SizeClassification.ELEMENT_WISE)            then Op.SUB_EW;
+      case (MathClassification.MULTIPLICATION,  SizeClassification.ELEMENT_WISE)            then Op.MUL_EW;
+      case (MathClassification.DIVISION,        SizeClassification.ELEMENT_WISE)            then Op.DIV_EW;
+      case (MathClassification.POWER,           SizeClassification.ELEMENT_WISE)            then Op.POW_EW;
+      case (MathClassification.MULTIPLICATION,  SizeClassification.ARRAY_SCALAR)            then Op.MUL_ARRAY_SCALAR;
+      case (MathClassification.ADDITION,        SizeClassification.ARRAY_SCALAR)            then Op.ADD_ARRAY_SCALAR;
+      case (MathClassification.SUBTRACTION,     SizeClassification.SCALAR_ARRAY)            then Op.SUB_SCALAR_ARRAY;
+      case (MathClassification.MULTIPLICATION,  SizeClassification.SCALAR)                  then Op.SCALAR_PRODUCT;
+      case (MathClassification.MULTIPLICATION,  SizeClassification.MATRIX)                  then Op.MATRIX_PRODUCT;
+      case (MathClassification.MULTIPLICATION,  SizeClassification.VECTOR_MATRIX)           then Op.MUL_VECTOR_MATRIX;
+      case (MathClassification.MULTIPLICATION,  SizeClassification.MATRIX_VECTOR)           then Op.MUL_MATRIX_VECTOR;
+      case (MathClassification.DIVISION,        SizeClassification.ARRAY_SCALAR)            then Op.DIV_ARRAY_SCALAR;
+      case (MathClassification.DIVISION,        SizeClassification.SCALAR_ARRAY)            then Op.DIV_SCALAR_ARRAY;
+      case (MathClassification.POWER,           SizeClassification.ARRAY_SCALAR)            then Op.POW_ARRAY_SCALAR;
+      case (MathClassification.POWER,           SizeClassification.SCALAR_ARRAY)            then Op.POW_SCALAR_ARRAY;
+      case (MathClassification.POWER,           SizeClassification.MATRIX)                  then Op.POW_MATRIX;
+      else algorithm
+        Error.addInternalError(getInstanceName() + ": Don't know how to handle math class and size class combination.", sourceInfo());
+      then fail();
+    end match;
+    result := OPERATOR(ty, op);
+  end fromClassification;
+
+  function getMathClassification
+    input Operator op;
+    output MathClassification mcl;
+  algorithm
+    (mcl, _) := classify(op);
+  end getMathClassification;
+
+  function getSizeClassification
+    input Operator op;
+    output SizeClassification scl;
+  algorithm
+    (_, scl) := classify(op);
+  end getSizeClassification;
+
+  function isDashClassification
+    input MathClassification mcl;
+    output Boolean b;
+  algorithm
+    b := match mcl
+      case MathClassification.ADDITION    then true;
+      case MathClassification.SUBTRACTION then true;
+      else false;
+    end match;
+  end isDashClassification;
+
+  function isCommutative
+    "returns true for operators that are commutative"
+    input Operator operator;
+    output Boolean b;
+  algorithm
+    b := match operator.op
+      case Op.ADD               then true;
+      case Op.MUL               then true;
+      case Op.ADD_EW            then true;
+      case Op.MUL_EW            then true;
+      // the following might need adaption since they depend on argument ordering
+      // furthermore weird regarding more than two arguments in Expression.MULTARY()
+      case Op.ADD_SCALAR_ARRAY  then true;
+      case Op.ADD_ARRAY_SCALAR  then true;
+      case Op.MUL_SCALAR_ARRAY  then true;
+      case Op.MUL_ARRAY_SCALAR  then true;
+      else false;
     end match;
 
-    outOp := OPERATOR(op.ty, neg_op);
-  end negate;
+  end isCommutative;
+
+  function isSoftCommutative
+    "returns true for operators that are not commutative but have an easy rule for swapping arguments"
+    input Operator operator;
+    output Boolean b;
+  algorithm
+    b := match operator.op
+      case Op.SUB               then true;
+      case Op.DIV               then true;
+      case Op.SUB_EW            then true;
+      case Op.DIV_EW            then true;
+      // the following might need adaption since they depend on argument ordering
+      // furthermore weird regarding more than two arguments in Expression.MULTARY()
+      case Op.SUB_SCALAR_ARRAY  then true;
+      case Op.SUB_ARRAY_SCALAR  then true;
+      case Op.DIV_SCALAR_ARRAY  then true;
+      case Op.DIV_ARRAY_SCALAR  then true;
+      else false;
+    end match;
+  end isSoftCommutative;
+
+  function isCombineable
+    input Operator op1;
+    input Operator op2;
+    output Boolean b;
+  protected
+    MathClassification mcl1, mcl2;
+    SizeClassification scl1, scl2;
+  algorithm
+    (mcl1, scl1) := classify(op1);
+    (mcl2, scl2) := classify(op2);
+    b := isCombineableMath(mcl1, mcl2) and isCombineableSize(scl1, scl2);
+  end isCombineable;
+
+  function isCombineableMath
+    input MathClassification mcl1;
+    input MathClassification mcl2;
+    output Boolean b;
+  algorithm
+    b :=  (Util.intCompare(Integer(mcl1), Integer(mcl2)) == 0)
+          or (isDashClassification(mcl1) and isDashClassification(mcl2));
+  end isCombineableMath;
+
+  function isCombineableSize
+    input SizeClassification scl1;
+    input SizeClassification scl2;
+    output Boolean b;
+  algorithm
+    b := (Util.intCompare(Integer(scl1), Integer(scl2)) == 0);
+  end isCombineableSize;
+
+  function toDebugString
+    input Operator op;
+    output String str;
+  algorithm
+    str := "OPERATOR(" + Type.toString(op.ty) + ", " + opToString(op.op) + ")";
+  end toDebugString;
+
+  function opToString
+    input Op op;
+    output String str;
+  algorithm
+    str := match op
+      case Op.ADD then "ADD";
+      case Op.SUB then "SUB";
+      case Op.MUL then "MUL";
+      case Op.DIV then "DIV";
+      case Op.POW then "POW";
+      case Op.ADD_EW then "ADD_EW";
+      case Op.SUB_EW then "SUB_EW";
+      case Op.MUL_EW then "MUL_EW";
+      case Op.DIV_EW then "DIV_EW";
+      case Op.POW_EW then "POW_EW";
+      case Op.ADD_SCALAR_ARRAY then "ADD_SCALAR_ARRAY";
+      case Op.ADD_ARRAY_SCALAR then "ADD_ARRAY_SCALAR";
+      case Op.SUB_SCALAR_ARRAY then "SUB_SCALAR_ARRAY";
+      case Op.SUB_ARRAY_SCALAR then "SUB_ARRAY_SCALAR";
+      case Op.MUL_SCALAR_ARRAY then "MUL_SCALAR_ARRAY";
+      case Op.MUL_ARRAY_SCALAR then "MUL_ARRAY_SCALAR";
+      case Op.MUL_VECTOR_MATRIX then "MUL_VECTOR_MATRIX";
+      case Op.MUL_MATRIX_VECTOR then "MUL_MATRIX_VECTOR";
+      case Op.SCALAR_PRODUCT then "SCALAR_PRODUCT";
+      case Op.MATRIX_PRODUCT then "MATRIX_PRODUCT";
+      case Op.DIV_SCALAR_ARRAY then "DIV_SCALAR_ARRAY";
+      case Op.DIV_ARRAY_SCALAR then "DIV_ARRAY_SCALAR";
+      case Op.POW_SCALAR_ARRAY then "POW_SCALAR_ARRAY";
+      case Op.POW_ARRAY_SCALAR then "POW_ARRAY_SCALAR";
+      case Op.POW_MATRIX then "POW_MATRIX";
+      case Op.UMINUS then "UMINUS";
+      case Op.AND then "AND";
+      case Op.OR then "OR";
+      case Op.NOT then "NOT";
+      case Op.LESS then "LESS";
+      case Op.LESSEQ then "LESSEQ";
+      case Op.GREATER then "GREATER";
+      case Op.GREATEREQ then "GREATEREQ";
+      case Op.EQUAL then "EQUAL";
+      case Op.NEQUAL then "NEQUAL";
+      case Op.USERDEFINED then "USERDEFINED";
+      else algorithm
+        Error.addMessage(Error.INTERNAL_ERROR,{getInstanceName() + "failed. Unhanded enumeration."});
+        then fail();
+    end match;
+  end opToString;
 
 annotation(__OpenModelica_Interface="frontend");
 end NFOperator;

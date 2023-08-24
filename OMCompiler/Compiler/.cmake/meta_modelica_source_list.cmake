@@ -14,7 +14,6 @@ set(OMC_MM_ALWAYS_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/FrontEnd/ComponentReference.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/FrontEnd/ConnectionGraph.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/FrontEnd/ConnectUtil.mo
-    ${CMAKE_CURRENT_SOURCE_DIR}/FrontEnd/Constants.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/FrontEnd/DAEDump.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/FrontEnd/DAE.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/FrontEnd/DAEUtil.mo
@@ -44,7 +43,6 @@ set(OMC_MM_ALWAYS_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/FrontEnd/MMath.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/FrontEnd/Mod.mo
   # Remember: Only files needed for compiling MetaModelica
-    ${CMAKE_CURRENT_SOURCE_DIR}/FrontEnd/NFInstUtil.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/FrontEnd/OperatorOverloading.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/FrontEnd/Parser.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/FrontEnd/ParserExt.mo
@@ -152,11 +150,9 @@ set(OMC_MM_ALWAYS_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/ExecStat.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/Flags.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/FlagsUtil.mo
-    ${CMAKE_CURRENT_SOURCE_DIR}/Util/GC.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/Util/GCExt.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/Gettext.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/Graph.mo
-    ${CMAKE_CURRENT_SOURCE_DIR}/Util/GraphStream.mo
-    ${CMAKE_CURRENT_SOURCE_DIR}/Util/GraphStreamExt.mo
   # Remember: Only files needed for compiling MetaModelica
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/HashSet.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/HashSetExp.mo
@@ -171,14 +167,12 @@ set(OMC_MM_ALWAYS_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/HashTableCrToExpOption.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/HashTable.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/HashTableExpToIndex.mo
-    #${CMAKE_CURRENT_SOURCE_DIR}/Util/HashTablePathToFunction.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/HashTableStringToPath.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/HashTableStringToProgram.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/IOStreamExt.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/IOStream.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/Lapack.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/List.mo
-    ${CMAKE_CURRENT_SOURCE_DIR}/Util/ModelicaExternalC.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/Mutable.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/Pointer.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/Print.mo
@@ -237,7 +231,6 @@ set(OMC_MM_BACKEND_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/BackEnd/Matching.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/BackEnd/MathematicaDump.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/BackEnd/OnRelaxation.mo
-    ${CMAKE_CURRENT_SOURCE_DIR}/BackEnd/OpenTURNS.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/BackEnd/RemoveSimpleEquations.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/BackEnd/ResolveLoops.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/BackEnd/Sorting.mo
@@ -252,7 +245,6 @@ set(OMC_MM_BACKEND_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/BackEnd/ZeroCrossings.mo
 
     ${CMAKE_CURRENT_SOURCE_DIR}/FFrontEnd/FGraphDump.mo
-    ${CMAKE_CURRENT_SOURCE_DIR}/FFrontEnd/FGraphStream.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/FFrontEnd/FInst.mo
 
     ${CMAKE_CURRENT_SOURCE_DIR}/FrontEnd/CheckModel.mo
@@ -283,9 +275,43 @@ set(OMC_MM_BACKEND_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/MidCode/MidToMid.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/MidCode/HashTableMidVar.mo
 
+    # "NBackend Classes";
+    ${CMAKE_CURRENT_SOURCE_DIR}/NBackEnd/Classes/NBackendDAE.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/NBackEnd/Classes/NBEquation.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/NBackEnd/Classes/NBStrongComponent.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/NBackEnd/Classes/NBSystem.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/NBackEnd/Classes/NBVariable.mo
+    # "NBackend Modules";
+    ${CMAKE_CURRENT_SOURCE_DIR}/NBackEnd/Modules/NBModule.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/NBackEnd/Modules/1_Main/NBAdjacency.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/NBackEnd/Modules/1_Main/NBCausalize.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/NBackEnd/Modules/1_Main/NBDAEMode.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/NBackEnd/Modules/1_Main/NBInitialization.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/NBackEnd/Modules/1_Main/NBMatching.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/NBackEnd/Modules/1_Main/NBPartitioning.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/NBackEnd/Modules/1_Main/NBResolveSingularities.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/NBackEnd/Modules/1_Main/NBSorting.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/NBackEnd/Modules/2_Pre/NBAlias.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/NBackEnd/Modules/2_Pre/NBBindings.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/NBackEnd/Modules/2_Pre/NBDetectStates.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/NBackEnd/Modules/2_Pre/NBEvents.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/NBackEnd/Modules/2_Pre/NBInline.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/NBackEnd/Modules/3_Post/NBJacobian.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/NBackEnd/Modules/3_Post/NBSolve.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/NBackEnd/Modules/3_Post/NBTearing.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/NBackEnd/Modules/3_Post/NBEvaluation.mo
+    # "NBackend Util";
+    ${CMAKE_CURRENT_SOURCE_DIR}/NBackEnd/Util/NBBackendUtil.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/NBackEnd/Util/NBDifferentiate.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/NBackEnd/Util/NBGraphUtil.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/NBackEnd/Util/NBReplacements.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/NBackEnd/Util/NBSlice.mo
+
     # "NFFrontEnd";
     ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFAlgorithm.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFArrayConnections.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFAttributes.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFBackendExtension.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFBinding.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFBuiltinCall.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFBuiltinFuncs.mo
@@ -319,21 +345,17 @@ set(OMC_MM_BACKEND_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFExpressionIterator.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFExpression.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFFlatModel.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFFlatModelicaUtil.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFFlatten.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFFunctionDerivative.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFFunctionInverse.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFFunction.mo
-    ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFHashTable3.mo
-    ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFHashTableCG.mo
-    ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFHashTableCrToUnit.mo
-    ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFHashTable.mo
-    ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFHashTableStringToUnit.mo
-    ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFHashTableUnitToString.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFImport.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFInline.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFInstContext.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFInst.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFInstNode.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFInstUtil.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFLookup.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFLookupState.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFLookupTree.mo
@@ -346,6 +368,7 @@ set(OMC_MM_BACKEND_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFRangeIterator.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFRecord.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFRestriction.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFSBGraphUtil.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFScalarize.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFSections.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFSimplifyExp.mo
@@ -361,6 +384,13 @@ set(OMC_MM_BACKEND_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFVariable.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/NFFrontEnd/NFVerifyModel.mo
 
+    # "NSimCode";
+    ${CMAKE_CURRENT_SOURCE_DIR}/NSimCode/NSimCode.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/NSimCode/NSimCodeUtil.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/NSimCode/NSimGenericCall.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/NSimCode/NSimJacobian.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/NSimCode/NSimStrongComponent.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/NSimCode/NSimVar.mo
 
     ${CMAKE_CURRENT_SOURCE_DIR}/Lexers/LexerJSON.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Lexers/LexerModelicaDiff.mo
@@ -380,10 +410,13 @@ set(OMC_MM_BACKEND_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/Script/MMToJuliaKeywords.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Script/NFApi.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Script/Conversion.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/Script/Obfuscate.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/Script/TotalModelDebug.mo
 
     ${CMAKE_CURRENT_SOURCE_DIR}/SimCode/HpcOmSimCodeMain.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/SimCode/SerializeInitXML.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/SimCode/SerializeModelInfo.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/SimCode/SerializeSparsityPattern.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/SimCode/SerializeTaskSystemInfo.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/SimCode/SimCode.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/SimCode/SimCodeMain.mo
@@ -396,22 +429,22 @@ set(OMC_MM_BACKEND_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/Template/CodegenEmbeddedC.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Template/CodegenCppCommon.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Template/CodegenCpp.mo
-    ${CMAKE_CURRENT_SOURCE_DIR}/Template/CodegenCppOld.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/Template/CodegenCppOMSI.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Template/CodegenCppHpcom.mo
-    ${CMAKE_CURRENT_SOURCE_DIR}/Template/CodegenCppHpcomOld.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/Template/CodegenCppHpcomOMSI.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Template/CodegenCppInit.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Template/CodegenFMU.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Template/CodegenFMU1.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Template/CodegenFMU2.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Template/CodegenFMUCommon.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Template/CodegenFMUCpp.mo
-    ${CMAKE_CURRENT_SOURCE_DIR}/Template/CodegenFMUCppOld.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/Template/CodegenFMUCppOMSI.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Template/CodegenOMSI_common.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Template/CodegenOMSIC.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Template/CodegenOMSIC_Equations.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Template/CodegenOMSICpp.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Template/CodegenFMUCppHpcom.mo
-    ${CMAKE_CURRENT_SOURCE_DIR}/Template/CodegenFMUCppHpcomOld.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/Template/CodegenFMUCppHpcomOMSI.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Template/CodegenJS.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Template/CodegenMidToC.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Template/CodegenUtilSimulation.mo
@@ -427,7 +460,6 @@ set(OMC_MM_BACKEND_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/AvlTreeString.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/AvlSetInt.mo
 
-    ${CMAKE_CURRENT_SOURCE_DIR}/Util/AdjacencyList.mo
     # ${CMAKE_CURRENT_SOURCE_DIR}/Util/BasePVector.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/Curl.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/DiffAlgorithm.mo
@@ -438,19 +470,18 @@ set(OMC_MM_BACKEND_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/FMIExt.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/GraphML.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/JSONExt.mo
-    ${CMAKE_CURRENT_SOURCE_DIR}/Util/HashTable4.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/HashTableCrToExp.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/HashTableExpToExp.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/HashTableCrIntToExp.mo
-    ${CMAKE_CURRENT_SOURCE_DIR}/Util/HashTableExpToIndexExp.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/HashTableCrToExpSourceTpl.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/HashTableCrToCrEqLst.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/HashTableSimCodeEqCache.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/HashTableSM1.mo
-    ${CMAKE_CURRENT_SOURCE_DIR}/Util/OMSimulator.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/Util/OMSimulatorExt.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/PriorityQueue.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/SBAtomicSet.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/SBFunctions.mo
+    ${CMAKE_CURRENT_SOURCE_DIR}/Util/SBGraph.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/SBInterval.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/SBLinearMap.mo
     ${CMAKE_CURRENT_SOURCE_DIR}/Util/SBMultiInterval.mo

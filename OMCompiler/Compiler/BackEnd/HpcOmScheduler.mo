@@ -3426,9 +3426,9 @@ algorithm
   simCodeOut.algebraicEquations := List.mapList1_1(simCodeOut.algebraicEquations, TDS_replaceSimEqSysIndex, ass);
   simCodeOut.equationsForZeroCrossings := List.map1(simCodeOut.equationsForZeroCrossings, TDS_replaceSimEqSysIndex, ass);
 
-  jacObts := List.map(simCodeOut.jacobianMatrixes, Util.makeOption);
+  jacObts := List.map(simCodeOut.jacobianMatrices, Util.makeOption);
   jacObts := List.map1(jacObts, TDS_replaceSimEqSysIdxInJacobianMatrix, ass);
-  simCodeOut.jacobianMatrixes := List.map(jacObts, Util.getOption);
+  simCodeOut.jacobianMatrices := List.map(jacObts, Util.getOption);
 
   varInfo.numEquations := idx;
   modelInfo.varInfo := varInfo;
@@ -3546,14 +3546,15 @@ algorithm
       list<SimCodeVar.SimVar> vars;
       String name;
       SimCode.SparsityPattern sparsity,sparsityT;
+      SimCode.NonlinearPattern nonlinearPat, nonlinearPatT;
       list<list<Integer>> colCols;
       array<Integer> ass;
       Integer newIdx;
       Option<HashTableCrefSimVar.HashTable> crefToSimVarHTJacobian;
-    case(SOME(SimCode.JAC_MATRIX(jacCols,vars,name,sparsity,sparsityT,colCols,maxCol,jacIdx,partIdx,crefToSimVarHTJacobian)),(newIdx,ass))
+    case(SOME(SimCode.JAC_MATRIX(jacCols,vars,name,sparsity,sparsityT,nonlinearPat,nonlinearPatT,colCols,maxCol,jacIdx,partIdx,{},crefToSimVarHTJacobian)),(newIdx,ass))
       equation
         (jacCols,(newIdx,ass)) = List.mapFold(jacCols,TDS_replaceSimEqSysIdxInJacobianColumnWithUpdate,(newIdx,ass));
-   then (SOME(SimCode.JAC_MATRIX(jacCols,vars,name,sparsity,sparsityT,colCols,maxCol,jacIdx,partIdx,crefToSimVarHTJacobian)),(newIdx,ass));
+   then (SOME(SimCode.JAC_MATRIX(jacCols,vars,name,sparsity,sparsityT,nonlinearPat,nonlinearPatT,colCols,maxCol,jacIdx,partIdx,{},crefToSimVarHTJacobian)),(newIdx,ass));
    else (jacIn,tplIn);
   end matchcontinue;
 end TDS_replaceSimEqSysIdxInJacobianMatrixWithUpdate;

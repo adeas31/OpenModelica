@@ -3,6 +3,9 @@
 // status: correct
 // teardown_command: rm -rf fmi_attributes_08.fmu fmi_attributes_08.log fmi_attributes_08.xml fmi_attributes_08_tmp.xml fmi_attributes_08.fmutmp/
 
+setCommandLineOptions("-d=newInst,-disableDirectionalDerivatives,fmuExperimental");
+getErrorString();
+
 loadString("
 model fmi_attributes_08
   parameter Real p;
@@ -14,7 +17,7 @@ equation
 end fmi_attributes_08;
 "); getErrorString();
 
-translateModelFMU(fmi_attributes_08); getErrorString();
+buildModelFMU(fmi_attributes_08); getErrorString();
 
 // unzip to console, quiet, extra quiet
 system("unzip -cqq fmi_attributes_08.fmu modelDescription.xml > fmi_attributes_08_tmp.xml"); getErrorString();
@@ -25,6 +28,8 @@ system("sed -n \"/<ModelStructure>/,/<\\/ModelStructure>/p\" fmi_attributes_08_t
 readFile("fmi_attributes_08.xml"); getErrorString();
 
 // Result:
+// true
+// ""
 // true
 // ""
 // "fmi_attributes_08.fmu"
@@ -53,7 +58,6 @@ readFile("fmi_attributes_08.xml"); getErrorString();
 //   <ScalarVariable
 //     name=\"_D_TMP_D_VAR_D_2_D_0PREX_D_TAN\"
 //     valueReference=\"2\"
-//     causality=\"local\"
 //     >
 //     <Real/>
 //   </ScalarVariable>

@@ -73,7 +73,6 @@ import Print;
 import System;
 
 public constant SourceInfo dummyInfo = SOURCEINFO("",false,0,0,0,0,0.0);
-public constant String derivativeNamePrefix="$DER";
 
 public function isIntGreater "Author: BZ"
   input Integer lhs;
@@ -91,7 +90,7 @@ public function linuxDotSlash "If operating system is Linux/Unix, return a './',
   output String str;
 algorithm
   str := Autoconf.os;
-  str := if str == "linux" or str == "OSX" then "./" else "";
+  str := if str == "linux" or str == "darwin" then "./" else "";
 end linuxDotSlash;
 
 public function flagValue "author: x02lucpo
@@ -920,6 +919,8 @@ algorithm
   xmlString := System.stringReplace(xmlString, "\"", "&quot;");
   xmlString := System.stringReplace(xmlString, "<", "&lt;");
   xmlString := System.stringReplace(xmlString, ">", "&gt;");
+  xmlString := System.stringReplace(xmlString, "\n", "&#10;");
+  xmlString := System.stringReplace(xmlString, "\r", "&#13;");
   // TODO! FIXME!, we have issues with accented chars in comments
   // that end up in the Model_init.xml file and makes it not well
   // formed but the line below does not work if the xmlString is
@@ -1642,6 +1643,42 @@ function profilertock2
 algorithm
    t := System.realtimeTock(ClockIndexes.RT_PROFILER2);
 end profilertock2;
+
+function applyTuple21<T1, T2>
+  "Applies a function to the first element of a tuple."
+  input tuple<T1, T2> inTuple;
+  input FuncT func;
+  output tuple<T1, T2> outTuple;
+
+  partial function FuncT
+    input output T1 e;
+  end FuncT;
+protected
+  T1 e1_1, e1_2;
+  T2 e2;
+algorithm
+  (e1_1, e2) := inTuple;
+  e1_2 := func(e1_1);
+  outTuple := if referenceEq(e1_1, e1_2) then inTuple else (e1_2, e2);
+end applyTuple21;
+
+function applyTuple22<T1, T2>
+  "Applies a function to the second element of a tuple."
+  input tuple<T1, T2> inTuple;
+  input FuncT func;
+  output tuple<T1, T2> outTuple;
+
+  partial function FuncT
+    input output T2 e;
+  end FuncT;
+protected
+  T1 e1;
+  T2 e2_1, e2_2;
+algorithm
+  (e1, e2_1) := inTuple;
+  e2_2 := func(e2_1);
+  outTuple := if referenceEq(e2_1, e2_2) then inTuple else (e1, e2_2);
+end applyTuple22;
 
 function applyTuple31<T1, T2, T3>
   input tuple<T1, T2, T3> inTuple;

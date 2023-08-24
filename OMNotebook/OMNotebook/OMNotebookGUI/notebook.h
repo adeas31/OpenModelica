@@ -74,7 +74,7 @@ class NotebookWindow : public DocumentView
   Q_OBJECT
 
 public:
-  NotebookWindow(Document *subject, const QString filename=0,
+  NotebookWindow(Document *subject, const QString filename=0, int isDrModelica=0,
                  QWidget *parent=0);
   virtual ~NotebookWindow();
 
@@ -263,8 +263,8 @@ public:
   QAction *redoAction;
   QAction *cutAction;
   QAction *copyAction;
-private:
   QAction *pasteAction;
+private:
   QAction *findAction;
   QAction *replaceAction;
   QAction *showExprAction;

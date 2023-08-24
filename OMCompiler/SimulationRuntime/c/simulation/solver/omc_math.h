@@ -113,13 +113,14 @@ _omc_matrix* _omc_subtractMatrixMatrix(_omc_matrix* mat1, _omc_matrix* mat2);
 _omc_matrix* _omc_multiplyMatrixMatrix(_omc_matrix* mat1, _omc_matrix* mat2);
 
 /* print functions */
-void _omc_printVectorWithEquationInfo(_omc_vector* vec, const char* name, const int logLevel, EQUATION_INFO eqnInfo);
-void _omc_printVector(_omc_vector* vec, const char* name, const int logLevel);
-void _omc_printMatrix(_omc_matrix* mat, const char* name, const int logLevel);
+void _omc_printVectorWithEquationInfo(_omc_vector* vec, const char* name, const enum LOG_STREAM stream, EQUATION_INFO eqnInfo);
+void _omc_printVector(_omc_vector* vec, const char* name, const enum LOG_STREAM stream);
+void _omc_printMatrix(_omc_matrix* mat, const char* name, const enum LOG_STREAM stream);
 
 /* norm functions */
 _omc_scalar _omc_euclideanVectorNorm(const _omc_vector* vec);
 _omc_scalar _omc_gen_euclideanVectorNorm(const _omc_scalar* vec_data, const _omc_size vec_size);
 _omc_scalar _omc_maximumVectorNorm(const _omc_vector* vec);
+_omc_scalar _omc_gen_maximumVectorNorm(const _omc_scalar* vec_data, const _omc_size vec_size);
 
 #endif

@@ -1,7 +1,7 @@
 /*
  * This file is part of OpenModelica.
  *
- * Copyright (c) 1998-CurentYear, Open Source Modelica Consortium (OSMC),
+ * Copyright (c) 1998-CurrentYear, Open Source Modelica Consortium (OSMC),
  * c/o Linköpings universitet, Department of Computer and Information Science,
  * SE-58183 Linköping, Sweden.
  *
@@ -32,7 +32,6 @@
 #define __FMU_READ_FLAGS_H__
 
 #include "fmu2_model_interface.h"
-#include "fmi2Functions.h"
 #include "../simulation_data.h"
 
 #ifdef __cplusplus

@@ -25,6 +25,8 @@ option(WITH_STATIC_CRT "(Visual C++) Enable to statically link CRT, which avoids
 
 project(LIBANTLR4)
 
+include(GNUInstallDirs)
+
 if(CMAKE_VERSION VERSION_EQUAL "3.0.0" OR
    CMAKE_VERSION VERSION_GREATER "3.0.0")
   CMAKE_POLICY(SET CMP0026 NEW)
@@ -147,7 +149,6 @@ endif(WITH_DEMO)
 # Generate CMake Package Files only if install is active
 if (ANTLR4_INSTALL)
 
-  include(GNUInstallDirs)
   include(CMakePackageConfigHelpers)
 
   if(NOT ANTLR4_CMAKE_DIR)
@@ -206,16 +207,16 @@ if (ANTLR4_INSTALL)
 
 endif(ANTLR4_INSTALL)
 
-if(EXISTS LICENSE.txt)
-install(FILES LICENSE.txt
-        DESTINATION "share/doc/libantlr4")
-elseif(EXISTS ../../LICENSE.txt)
-install(FILES ../../LICENSE.txt
-    DESTINATION "share/doc/libantlr4")
-endif()
+# if(EXISTS LICENSE.txt)
+# install(FILES LICENSE.txt
+#         DESTINATION "share/doc/libantlr4")
+# elseif(EXISTS ../../LICENSE.txt)
+# install(FILES ../../LICENSE.txt
+#     DESTINATION "share/doc/libantlr4")
+# endif()
 
-install(FILES README.md VERSION
-    DESTINATION "share/doc/libantlr4")
+# install(FILES README.md VERSION
+#     DESTINATION "share/doc/libantlr4")
 
 set(CPACK_PACKAGE_CONTACT "antlr-discussion@googlegroups.com")
 set(CPACK_PACKAGE_VERSION ${ANTLR_VERSION})

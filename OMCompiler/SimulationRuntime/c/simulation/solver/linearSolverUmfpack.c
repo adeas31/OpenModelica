@@ -142,7 +142,7 @@ int getAnalyticalJacobianUmfPack(DATA* data, threadData_t *threadData, int sysNu
   ANALYTIC_JACOBIAN* parentJacobian = systemData->parDynamicData[omc_get_thread_num()].parentJacobian;
 
   int nth = 0;
-  int nnz = jacobian->sparsePattern->numberOfNoneZeros;
+  int nnz = jacobian->sparsePattern->numberOfNonZeros;
 
   for(i=0; i < jacobian->sizeRows; i++)
   {
@@ -176,11 +176,11 @@ int getAnalyticalJacobianUmfPack(DATA* data, threadData_t *threadData, int sysNu
 /*! \fn wrapper_fvec_umfpack for the residual function
  *
  */
-static int wrapper_fvec_umfpack(double* x, double* f, void** data, int sysNumber)
+static int wrapper_fvec_umfpack(double* x, double* f, RESIDUAL_USERDATA* resUserData, int sysNumber)
 {
   int iflag = 0;
 
-  (*((DATA*)data[0])->simulationInfo->linearSystemData[sysNumber].residualFunc)(data, x, f, &iflag);
+  resUserData->data->simulationInfo->linearSystemData[sysNumber].residualFunc(resUserData, x, f, &iflag);
   return 0;
 }
 
@@ -195,7 +195,7 @@ static int wrapper_fvec_umfpack(double* x, double* f, void** data, int sysNumber
 int
 solveUmfPack(DATA *data, threadData_t *threadData, int sysNumber, double* aux_x)
 {
-  void *dataAndThreadData[2] = {data, threadData};
+  RESIDUAL_USERDATA resUserData = {.data=data, .threadData=threadData, .solverData=NULL};
   LINEAR_SYSTEM_DATA* systemData = &(data->simulationInfo->linearSystemData[sysNumber]);
   DATA_UMFPACK* solverData = (DATA_UMFPACK*)systemData->parDynamicData[omc_get_thread_num()].solverData[0];
   _omc_scalar residualNorm = 0;
@@ -205,7 +205,7 @@ solveUmfPack(DATA *data, threadData_t *threadData, int sysNumber, double* aux_x)
   double tmpJacEvalTime;
   int reuseMatrixJac = (data->simulationInfo->currentContext == CONTEXT_SYM_JACOBIAN && data->simulationInfo->currentJacobianEval > 0);
 
-  infoStreamPrintWithEquationIndexes(LOG_LS, 0, indexes, "Start solving Linear System %d (size %d) at time %g with UMFPACK Solver",
+  infoStreamPrintWithEquationIndexes(LOG_LS, omc_dummyFileInfo, 0, indexes, "Start solving Linear System %d (size %d) at time %g with UMFPACK Solver",
    eqSystemNumber, (int) systemData->size,
    data->localData[0]->timeValue);
 
@@ -236,7 +236,7 @@ solveUmfPack(DATA *data, threadData_t *threadData, int sysNumber, double* aux_x)
 
     /* calculate vector b (rhs) */
     memcpy(solverData->work, aux_x, sizeof(double)*solverData->n_row);
-    wrapper_fvec_umfpack(solverData->work, systemData->parDynamicData[omc_get_thread_num()].b, dataAndThreadData, sysNumber);
+    wrapper_fvec_umfpack(solverData->work, systemData->parDynamicData[omc_get_thread_num()].b, &resUserData, sysNumber);
   }
   tmpJacEvalTime = rt_ext_tp_tock(&(solverData->timeClock));
   systemData->jacobianTime += tmpJacEvalTime;
@@ -308,13 +308,13 @@ solveUmfPack(DATA *data, threadData_t *threadData, int sysNumber, double* aux_x)
         aux_x[i] += solverData->work[i];
 
       /* update inner equations */
-      wrapper_fvec_umfpack(aux_x, solverData->work, dataAndThreadData, sysNumber);
+      wrapper_fvec_umfpack(aux_x, solverData->work, &resUserData, sysNumber);
       residualNorm = _omc_gen_euclideanVectorNorm(solverData->work, solverData->n_row);
 
       if ((isnan(residualNorm)) || (residualNorm>1e-4)){
-        warningStreamPrint(LOG_LS, 0,
-            "Failed to solve linear system of equations (no. %d) at time %f. Residual norm is %.15g.",
-            (int)systemData->equationIndex, data->localData[0]->timeValue, residualNorm);
+        warningStreamPrintWithLimit(LOG_LS, 0, ++(systemData->numberOfFailures) /* Update counter */, data->simulationInfo->maxWarnDisplays,
+                                    "Failed to solve linear system of equations (no. %d) at time %f. Residual norm is %.15g.",
+                                    (int)systemData->equationIndex, data->localData[0]->timeValue, residualNorm);
         success = 0;
       }
     } else {
@@ -338,9 +338,9 @@ solveUmfPack(DATA *data, threadData_t *threadData, int sysNumber, double* aux_x)
   }
   else
   {
-    warningStreamPrint(LOG_STDOUT, 0,
-      "Failed to solve linear system of equations (no. %d) at time %f, system status %d.",
-        (int)systemData->equationIndex, data->localData[0]->timeValue, status);
+    warningStreamPrintWithLimit(LOG_LS, 0, ++(systemData->numberOfFailures) /* Update counter */, data->simulationInfo->maxWarnDisplays,
+                                "Failed to solve linear system of equations (no. %d) at time %f, system status %d.",
+                                (int)systemData->equationIndex, data->localData[0]->timeValue, status);
   }
   solverData->numberSolving += 1;
 

@@ -50,11 +50,42 @@ RectangleAnnotation::RectangleAnnotation(QString annotation, GraphicsView *pGrap
   setShapeFlags(true);
 }
 
+RectangleAnnotation::RectangleAnnotation(ModelInstance::Rectangle *pRectangle, bool inherited, GraphicsView *pGraphicsView)
+  : ShapeAnnotation(inherited, pGraphicsView, 0, 0)
+{
+  mpOriginItem = new OriginItem(this);
+  mpOriginItem->setPassive();
+  mpRectangle = pRectangle;
+  // set the default values
+  GraphicItem::setDefaults();
+  FilledShape::setDefaults();
+  ShapeAnnotation::setDefaults();
+  // set users default value by reading the settings file.
+  ShapeAnnotation::setUserDefaults();
+  parseShapeAnnotation();
+  setShapeFlags(true);
+}
+
 RectangleAnnotation::RectangleAnnotation(ShapeAnnotation *pShapeAnnotation, Element *pParent)
   : ShapeAnnotation(pShapeAnnotation, pParent)
 {
   mpOriginItem = 0;
   updateShape(pShapeAnnotation);
+  applyTransformation();
+}
+
+RectangleAnnotation::RectangleAnnotation(ModelInstance::Rectangle *pRectangle, Element *pParent)
+  : ShapeAnnotation(pParent)
+{
+  mpOriginItem = 0;
+  mpRectangle = pRectangle;
+  // set the default values
+  GraphicItem::setDefaults();
+  FilledShape::setDefaults();
+  ShapeAnnotation::setDefaults();
+  // set users default value by reading the settings file.
+  ShapeAnnotation::setUserDefaults();
+  parseShapeAnnotation();
   applyTransformation();
 }
 
@@ -81,7 +112,7 @@ RectangleAnnotation::RectangleAnnotation(Element *pParent)
   setLineColor(QColor(0, 0, 0));
   setFillColor(QColor(240, 240, 240));
   setFillPattern(StringHandler::FillSolid);
-  QList<QPointF> extents;
+  QVector<QPointF> extents;
   extents << QPointF(-100, -100) << QPointF(100, 100);
   setExtents(extents);
   setPos(mOrigin);
@@ -106,9 +137,6 @@ RectangleAnnotation::RectangleAnnotation(GraphicsView *pGraphicsView)
   setLineColor(QColor(0, 0, 0));
   setFillColor(QColor(240, 240, 240));
   setFillPattern(StringHandler::FillSolid);
-  QList<QPointF> extents;
-  extents << QPointF(-100, -100) << QPointF(100, 100);
-  setExtents(extents);
   setPos(mOrigin);
   setRotation(mRotation);
   setShapeFlags(true);
@@ -126,9 +154,22 @@ void RectangleAnnotation::parseShapeAnnotation(QString annotation)
   // 9th item of the list contains the border pattern.
   mBorderPattern = StringHandler::getBorderPatternType(stripDynamicSelect(list.at(8)));
   // 10th item is the extent points
-  mExtents.parse(list.at(9));
+  mExtent.parse(list.at(9));
   // 11th item of the list contains the corner radius.
   mRadius.parse(list.at(10));
+}
+
+void RectangleAnnotation::parseShapeAnnotation()
+{
+  GraphicItem::parseShapeAnnotation(mpRectangle);
+  FilledShape::parseShapeAnnotation(mpRectangle);
+
+  mBorderPattern = mpRectangle->getBorderPattern();
+  mBorderPattern.evaluate(mpRectangle->getParentModel());
+  mExtent = mpRectangle->getExtent();
+  mExtent.evaluate(mpRectangle->getParentModel());
+  mRadius = mpRectangle->getRadius();
+  mRadius.evaluate(mpRectangle->getParentModel());
 }
 
 QRectF RectangleAnnotation::boundingRect() const
@@ -152,8 +193,9 @@ void RectangleAnnotation::paint(QPainter *painter, const QStyleOptionGraphicsIte
   Q_UNUSED(widget);
   if (mVisible) {
     // state machine visualization
-    if (mpParentComponent && mpParentComponent->getLibraryTreeItem() && mpParentComponent->getLibraryTreeItem()->isState()
-        && mpParentComponent->getGraphicsView()->isVisualizationView()) {
+    if (mpParentComponent && mpParentComponent->getGraphicsView()->isVisualizationView()
+        && ((mpParentComponent->getGraphicsView()->getModelWidget()->isNewApi() && mpParentComponent->getModel() && mpParentComponent->getModel()->getAnnotation()->isState())
+            || (mpParentComponent->getLibraryTreeItem() && mpParentComponent->getLibraryTreeItem()->isState()))) {
       if (mpParentComponent->isActiveState()) {
         painter->setOpacity(1.0);
       } else {
@@ -182,20 +224,11 @@ QString RectangleAnnotation::getOMCShapeAnnotation()
   annotationString.append(GraphicItem::getOMCShapeAnnotation());
   annotationString.append(FilledShape::getOMCShapeAnnotation());
   // get the border pattern
-  annotationString.append(StringHandler::getBorderPatternString(mBorderPattern));
+  annotationString.append(mBorderPattern.toQString());
   // get the extents
-  if (mExtents.size() > 1) {
-    QString extentString;
-    extentString.append("{");
-    extentString.append("{").append(QString::number(mExtents.at(0).x())).append(",");
-    extentString.append(QString::number(mExtents.at(0).y())).append("},");
-    extentString.append("{").append(QString::number(mExtents.at(1).x())).append(",");
-    extentString.append(QString::number(mExtents.at(1).y())).append("}");
-    extentString.append("}");
-    annotationString.append(extentString);
-  }
+  annotationString.append(mExtent.toQString());
   // get the radius
-  annotationString.append(QString::number(mRadius));
+  annotationString.append(mRadius.toQString());
   return annotationString.join(",");
 }
 
@@ -220,23 +253,16 @@ QString RectangleAnnotation::getShapeAnnotation()
   annotationString.append(GraphicItem::getShapeAnnotation());
   annotationString.append(FilledShape::getShapeAnnotation());
   // get the border pattern
-  if (mBorderPattern != StringHandler::BorderNone) {
-    annotationString.append(QString("borderPattern=").append(StringHandler::getBorderPatternString(mBorderPattern)));
+  if (mBorderPattern.isDynamicSelectExpression() || mBorderPattern.toQString().compare(QStringLiteral("BorderPattern.None")) != 0) {
+    annotationString.append(QString("borderPattern=%1").arg(mBorderPattern.toQString()));
   }
   // get the extents
-  if (mExtents.size() > 1) {
-    QString extentString;
-    extentString.append("extent={");
-    extentString.append("{").append(QString::number(mExtents.at(0).x())).append(",");
-    extentString.append(QString::number(mExtents.at(0).y())).append("},");
-    extentString.append("{").append(QString::number(mExtents.at(1).x())).append(",");
-    extentString.append(QString::number(mExtents.at(1).y())).append("}");
-    extentString.append("}");
-    annotationString.append(extentString);
+  if (mExtent.isDynamicSelectExpression() || mExtent.size() > 1) {
+    annotationString.append(QString("extent=%1").arg(mExtent.toQString()));
   }
   // get the radius
-  if (mRadius != 0) {
-    annotationString.append(QString("radius=").append(QString::number(mRadius)));
+  if (mRadius.isDynamicSelectExpression() || mRadius.toQString().compare(QStringLiteral("0")) != 0) {
+    annotationString.append(QString("radius=%1").arg(mRadius.toQString()));
   }
   return QString("Rectangle(").append(annotationString.join(",")).append(")");
 }
@@ -247,6 +273,11 @@ void RectangleAnnotation::updateShape(ShapeAnnotation *pShapeAnnotation)
   GraphicItem::setDefaults(pShapeAnnotation);
   FilledShape::setDefaults(pShapeAnnotation);
   ShapeAnnotation::setDefaults(pShapeAnnotation);
+}
+
+ModelInstance::Extend *RectangleAnnotation::getExtend() const
+{
+  return mpRectangle->getParentExtend();
 }
 
 /*!

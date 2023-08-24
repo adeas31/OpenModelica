@@ -45,6 +45,7 @@ public import AbsynUtil;
 
 protected import List;
 protected import Interactive;
+protected import InteractiveUtil;
 protected import Inst;
 protected import FCore;
 protected import System; // stringReal
@@ -87,37 +88,24 @@ algorithm
       Absyn.Path cPath;
       Interactive.GraphicEnvCache env;
 
-    case (Absyn.CLASS(
-      name = n,
-      partialPrefix = part,
-      finalPrefix = f,
-      encapsulatedPrefix = e,
-      restriction = r,
-      body = d,
-      info = file_info),p,Absyn.IDENT(name = ""))
+    case (outClass as Absyn.CLASS(name = n, body = d),p,Absyn.IDENT(name = ""))
       equation
         //debug_print("Refactoring Class1:", n);
         cPath = Absyn.IDENT(n);
         env = Interactive.getClassEnv(p,cPath);
         resultClassDef = refactorGraphAnnInClassDef(d,p,cPath,env);
+        outClass.body = resultClassDef;
       then
-        Absyn.CLASS(n,part,f,e,r,resultClassDef,file_info);
+        outClass;
 
-    case (Absyn.CLASS(
-      name = n,
-      partialPrefix = part,
-      finalPrefix = f,
-      encapsulatedPrefix = e,
-      restriction = r,
-      body = d,
-      info = file_info),p,cPath)
+    case (outClass as Absyn.CLASS(name = n, body = d),p,cPath)
       equation
        //  debug_print("Refactoring Class:", n);
         cPath = AbsynUtil.joinPaths(cPath,Absyn.IDENT(n));
         env = Interactive.getClassEnv(p,cPath);
         resultClassDef = refactorGraphAnnInClassDef(d,p,cPath,env);
       then
-        Absyn.CLASS(n,part,f,e,r,resultClassDef,file_info);
+        outClass;
 
   end matchcontinue;
 
@@ -629,7 +617,7 @@ algorithm
       equation
         fullPath = fixPaths(cPath, path);
        // debug_print("getRestrictionFromPath: TryingLookingUp:", AbsynUtil.pathString(fullPath));
-        cdef = Interactive.getPathedClassInProgram(fullPath,p);
+        cdef = InteractiveUtil.getPathedClassInProgram(fullPath,p);
         restriction = getRestrictionInClass(cdef);
       then
         restriction;
@@ -638,7 +626,7 @@ algorithm
       equation
         (_,fullPath) = Interactive.mkFullyQual(env,path);
     //    debug_print("getRestrictionFromPath: LookingUp:", AbsynUtil.pathString(fullPath));
-        cdef = Interactive.getPathedClassInProgram(fullPath,p);
+        cdef = InteractiveUtil.getPathedClassInProgram(fullPath,p);
         restriction = getRestrictionInClass(cdef);
       then
         restriction;
@@ -991,7 +979,7 @@ algorithm
       equation
         fullPath = fixPaths(cPath, path);
 //        debug_print("getCoordsInPath: TryingLookingUp:", AbsynUtil.pathString(fullPath));
-        cdef = Interactive.getPathedClassInProgram(fullPath,p);
+        cdef = InteractiveUtil.getPathedClassInProgram(fullPath,p);
         (x1,y1,x2,y2) = getCoordsInClass(cdef,context);
       then
        (x1,y1,x2,y2);
@@ -1006,7 +994,7 @@ algorithm
         //print("\npath = ");
         //print(str);
     //    debug_print("getCoordsInPath: LookingUp:", AbsynUtil.pathString(fullPath));
-        cdef = Interactive.getPathedClassInProgram(fullPath,p);
+        cdef = InteractiveUtil.getPathedClassInProgram(fullPath,p);
         (x1,y1,x2,y2) = getCoordsInClass(cdef,context);
       then
         (x1,y1,x2,y2);//(Absyn.REAL(-100.0),Absyn.REAL(-100.0),Absyn.REAL(100.0),Absyn.REAL(100.0));

@@ -56,10 +56,6 @@
 #include "gc.h"
 
 extern "C" {
-void (*omc_assert)(threadData_t*,FILE_INFO info,const char *msg,...) __attribute__((noreturn)) = omc_assert_function;
-void (*omc_assert_warning)(FILE_INFO info,const char *msg,...) = omc_assert_warning_function;
-void (*omc_terminate)(FILE_INFO info,const char *msg,...) = omc_terminate_function;
-void (*omc_throw)(threadData_t*) __attribute__ ((noreturn)) = omc_throw_function;
 int omc_Main_handleCommand(void *threadData, void *imsg, void **omsg);
 void* omc_Main_init(void *threadData, void *args);
 void omc_System_initGarbageCollector(void *threadData);
@@ -181,10 +177,8 @@ namespace IAEX
     if( error_.size() > 2 ) {
       if (error_.contains("Error:")) {
         severity = 2;
-        error_ = QString( "OMC-ERROR: \n" ) + error_;
       } else if (error_.contains("Warning:")) {
         severity = 1;
-        error_ = QString( "OMC-WARNING: \n" ) + error_;
       } else {
         severity = 0;
       }

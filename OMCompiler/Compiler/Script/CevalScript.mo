@@ -65,6 +65,7 @@ import Values;
 protected
 import Autoconf;
 import BaseHashSet;
+import Builtin;
 import CevalFunction;
 import CevalScriptBackend;
 import ClassInf;
@@ -87,7 +88,7 @@ import FGraph;
 import Flags;
 import FlagsUtil;
 import FNode;
-import GC;
+import GCExt;
 import GenerateAPIFunctionsTpl;
 import Global;
 import Graph;
@@ -98,6 +99,7 @@ import InteractiveUtil;
 import List;
 import Lookup;
 import Mod;
+import PackageManagement;
 import Parser;
 import Print;
 import SCode;
@@ -112,6 +114,7 @@ import SymbolTable;
 import System;
 import Tpl;
 import Types;
+import UnorderedMap;
 import Unparsing;
 import Util;
 import ValuesUtil;
@@ -309,7 +312,7 @@ algorithm
   end if;
 end compileModel;
 
-protected function loadFile "load the file or the directory structure if the file is named package.mo"
+public function loadFile "load the file or the directory structure if the file is named package.mo"
   input String name;
   input String encoding;
   input Absyn.Program p;
@@ -335,8 +338,60 @@ algorithm
   end if;
   outProgram := Parser.parse(name,encoding);
   ClassLoader.checkOnLoadMessage(outProgram);
+
+  // Check if we have duplicate top level classes before calling checkUsesAndUpdateProgram()
+  // which will update the program by repeatedly replacing duplicate classes with last one seen.
+  if checkDuplicateTopLevelClasses(outProgram) then
+    fail();
+  end if;
+
   outProgram := checkUsesAndUpdateProgram(outProgram, p, checkUses, Settings.getModelicaPath(Testsuite.isRunning()), notifyLoad, requireExactVersion);
 end loadFile;
+
+protected function checkDuplicateTopLevelClasses
+  input Absyn.Program program;
+  output Boolean hasDuplicates = false;
+protected
+  Boolean skip;
+  list<SourceInfo> infos;
+  UnorderedMap<String, Absyn.Info> classInfoMap;
+  Option<Absyn.Info> optClassInfo;
+algorithm
+
+  if listLength(program.classes) < 2 then
+    return;
+  end if;
+
+  classInfoMap := UnorderedMap.new<Absyn.Info>(stringHashDjb2, stringEq);
+  for cl in program.classes loop
+    _ := match cl
+      case Absyn.CLASS(info=SOURCEINFO())
+        algorithm
+          // If the class comes from the interactive env or builtin files, ignore it.
+          skip := stringEq(cl.info.fileName,"<interactive>")
+                  or stringEq(System.basename(cl.info.fileName), "ModelicaBuiltin.mo")
+                  or stringEq(System.basename(cl.info.fileName), "MetaModelicaBuiltin.mo");
+
+          if not skip then
+            optClassInfo := UnorderedMap.get(cl.name, classInfoMap);
+
+            if Util.isSome(optClassInfo) then
+              // It is a duplicate named top level class. Print error and return.
+              infos := {Util.getOption(optClassInfo), cl.info};
+              Error.addMultiSourceMessage(Error.DOUBLE_DECLARATION_OF_ELEMENTS, {cl.name}, infos);
+              hasDuplicates := true;
+              return;
+            else
+              // It is not a duplicate yet. Add it to the map and continue.
+              UnorderedMap.add(cl.name, cl.info, classInfoMap);
+            end if;
+
+          end if;
+        then ();
+      else ();
+    end match;
+  end for;
+end checkDuplicateTopLevelClasses;
 
 protected function checkUsesAndUpdateProgram
   input Absyn.Program newp;
@@ -349,12 +404,9 @@ protected
   list<tuple<Absyn.Path,String,list<String>,Boolean>> modelsToLoad;
 algorithm
   modelsToLoad := if checkUses then Interactive.getUsesAnnotationOrDefault(newp, requireExactVersion) else {};
-  p := Interactive.updateProgram(newp, p);
+  p := InteractiveUtil.updateProgram(newp, p);
   (p, _) := loadModel(modelsToLoad, modelicaPath, p, false, notifyLoad, checkUses, requireExactVersion, false);
 end checkUsesAndUpdateProgram;
-
-protected type LoadModelFoldArg =
-  tuple<String /*modelicaPath*/, Boolean /*forceLoad*/, Boolean /*notifyLoad*/, Boolean /*checkUses*/, Boolean /*requireExactVersion*/, Boolean /*encrypted*/>;
 
 public function loadModel
   input list<tuple<Absyn.Path,String,list<String>,Boolean /* Only use the first entry on the MODELICAPATH */>> imodelsToLoad;
@@ -366,32 +418,42 @@ public function loadModel
   input Boolean requireExactVersion;
   input Boolean encrypted = false;
   input String pathToFile = "";
-  output Absyn.Program pnew;
-  output Boolean success;
+  output Absyn.Program pnew = ip;
+  output Boolean success = true;
 protected
-  LoadModelFoldArg arg = (modelicaPath, forceLoad, notifyLoad, checkUses, requireExactVersion, encrypted);
+  Boolean b;
 algorithm
-  (pnew, success) := List.fold2(imodelsToLoad, loadModel1, arg, pathToFile, (ip, true));
+  PackageManagement.installCachedPackages();
+
+  for m in imodelsToLoad loop
+    (pnew, b) := loadModel1(m, modelicaPath, forceLoad, notifyLoad,
+      checkUses, requireExactVersion, encrypted, pathToFile, pnew);
+    success := b and success;
+  end for;
 end loadModel;
 
 protected function loadModel1
   input tuple<Absyn.Path,String,list<String>,Boolean> modelToLoad;
-  input LoadModelFoldArg inArg;
+  input String modelicaPath;
+  input Boolean forceLoad;
+  input Boolean notifyLoad;
+  input Boolean checkUses;
+  input Boolean requireExactVersion;
+  input Boolean encrypted;
   input String pathToFile;
-  input tuple<Absyn.Program, Boolean> inTpl;
-  output tuple<Absyn.Program, Boolean> outTpl;
+  input output Absyn.Program program;
+        output Boolean success = true;
 protected
   list<tuple<Absyn.Path,String,list<String>,Boolean>> modelsToLoad;
-  Boolean b, b1, success, forceLoad, notifyLoad, checkUses, requireExactVersion, onlyCheckFirstModelicaPath, encrypted;
+  Boolean onlyCheckFirstModelicaPath;
   Absyn.Path path;
   list<String> versionsLst;
-  String pathStr, versions, className, version, modelicaPath, thisModelicaPath, dir;
-  Absyn.Program p, pnew;
+  String pathStr, versions, version, thisModelicaPath, dir, requestedBy;
+  Absyn.Program pnew;
   ErrorTypes.MessageTokens msgTokens;
   Option<Absyn.Class> cl;
 algorithm
-  (path, _, versionsLst, onlyCheckFirstModelicaPath) := modelToLoad;
-  (modelicaPath, forceLoad, notifyLoad, checkUses, requireExactVersion, encrypted) := inArg;
+  (path, requestedBy, versionsLst, onlyCheckFirstModelicaPath) := modelToLoad;
   if onlyCheckFirstModelicaPath then
     /* Using loadFile() */
     thisModelicaPath::_ := System.strtok(modelicaPath, Autoconf.groupDelimiter);
@@ -399,8 +461,7 @@ algorithm
     thisModelicaPath := modelicaPath;
   end if;
   try
-    (p, success) := inTpl;
-    if checkModelLoaded(modelToLoad, p, forceLoad, NONE()) then
+    if checkModelLoaded(modelToLoad, program, forceLoad, NONE()) then
       pnew := Absyn.PROGRAM({}, Absyn.TOP());
       version := "";
     else
@@ -415,30 +476,30 @@ algorithm
           pnew := Absyn.PROGRAM({}, Absyn.TOP());
         end if;
       end if;
-      version := getPackageVersion(path, pnew);
-      b := not notifyLoad or forceLoad;
-      msgTokens := {AbsynUtil.pathString(path), version};
-      Error.assertionOrAddSourceMessage(b, Error.NOTIFY_NOT_LOADED, msgTokens, AbsynUtil.dummyInfo);
-    end if;
-    p := Interactive.updateProgram(pnew, p);
 
-    b := true;
+      if notifyLoad and not forceLoad then
+        version := getPackageVersion(path, pnew);
+        msgTokens := {AbsynUtil.pathString(path), version, requestedBy};
+        Error.addMessage(Error.NOTIFY_LOAD_MODEL_DUE_TO_USES, msgTokens);
+        System.loadModelCallBack(AbsynUtil.pathFirstIdent(path));
+      end if;
+    end if;
+
+    program := InteractiveUtil.updateProgram(pnew, program);
+
     if checkUses then
       modelsToLoad := Interactive.getUsesAnnotationOrDefault(pnew, requireExactVersion);
-      (p, b) := loadModel(modelsToLoad, modelicaPath, p, false, notifyLoad, checkUses, requireExactVersion, false);
+      (program, success) := loadModel(modelsToLoad, modelicaPath, program, false, notifyLoad, checkUses, requireExactVersion, false);
     end if;
-    outTpl := (p, success and b);
   else
-    (p, _) := inTpl;
     pathStr := AbsynUtil.pathString(path);
     versions := stringDelimitList(versionsLst, ",");
     msgTokens := {pathStr, versions, thisModelicaPath};
     if forceLoad then
-      Error.addMessage(Error.LOAD_MODEL, msgTokens);
-      outTpl := (p, false);
+      Error.addMessage(Error.LOAD_MODEL_FAILED, msgTokens);
+      success := false;
     else
       Error.addMessage(Error.NOTIFY_LOAD_MODEL_FAILED, msgTokens);
-      outTpl := inTpl;
     end if;
   end try;
 end loadModel1;
@@ -461,7 +522,7 @@ algorithm
     case (_,_,true,_) then false;
     case ((path,requestOrigin,str1::_,_),_,false,_)
       equation
-        cdef = Interactive.getPathedClassInProgram(path,p);
+        cdef = InteractiveUtil.getPathedClassInProgram(path,p);
         ostr2 = AbsynUtil.getNamedAnnotationInClass(cdef,Absyn.IDENT("version"),Interactive.getAnnotationStringValueOrFail);
         (withoutConversion,withConversion) = Interactive.getConversionAnnotation(cdef);
         checkValidVersion(path,str1,ostr2,requestOrigin=requestOrigin,withConversion=withConversion,withoutConversion=withoutConversion);
@@ -599,7 +660,7 @@ algorithm
       list<SCode.Element> elts;
       list<ErrorTypes.TotalMessage> messages;
       list<tuple<String,list<String>>> interfaceTypeAssoc;
-      GC.ProfStats gcStats;
+      GCExt.ProfStats gcStats;
 
     case ("parseString",{Values.STRING(str1),Values.STRING(str2)})
       algorithm
@@ -677,22 +738,22 @@ algorithm
 
     case ("GC_gcollect_and_unmap",{})
       algorithm
-        GC.gcollectAndUnmap();
+        GCExt.gcollectAndUnmap();
       then
         Values.BOOL(true);
 
     case ("GC_expand_hp",{Values.INTEGER(i)})
-      then Values.BOOL(GC.expandHeap(i));
+      then Values.BOOL(GCExt.expandHeap(i));
 
     case ("GC_set_max_heap_size",{Values.INTEGER(i)})
       algorithm
-        GC.setMaxHeapSize(i);
+        GCExt.setMaxHeapSize(i);
       then
         Values.BOOL(true);
 
     case ("GC_get_prof_stats",{})
       algorithm
-        gcStats := GC.getProfStats();
+        gcStats := GCExt.getProfStats();
       then
         Values.RECORD(Absyn.IDENT("GC_PROFSTATS"),
          {
@@ -797,6 +858,7 @@ algorithm
       algorithm
         // cmd = Util.rawStringToInputString(cmd);
         Settings.setModelicaPath(cmd);
+        setGlobalRoot(Global.packageIndexCacheIndex, 0);
       then
         Values.BOOL(true);
 
@@ -868,9 +930,14 @@ algorithm
 
     case ("setCommandLineOptions",{Values.STRING(str)})
       algorithm
+        b := Flags.isSet(Flags.SCODE_INST);
         strs := System.strtok(str, " ");
         {} := FlagsUtil.readArgs(strs);
         outCache := FCore.emptyCache();
+
+        if b <> Flags.isSet(Flags.SCODE_INST) then
+          Builtin.clearInitialGraph();
+        end if;
       then
         Values.BOOL(true);
 
@@ -895,7 +962,11 @@ algorithm
 
     case ("enableNewInstantiation",_)
       algorithm
-        FlagsUtil.enableDebug(Flags.SCODE_INST);
+        if not Flags.isSet(Flags.SCODE_INST) then
+          Builtin.clearInitialGraph();
+          FlagsUtil.enableDebug(Flags.SCODE_INST);
+          outCache := FCore.emptyCache();
+        end if;
       then
         Values.BOOL(true);
 
@@ -904,7 +975,11 @@ algorithm
 
     case ("disableNewInstantiation",_)
       algorithm
-        FlagsUtil.disableDebug(Flags.SCODE_INST);
+        if Flags.isSet(Flags.SCODE_INST) then
+          FlagsUtil.disableDebug(Flags.SCODE_INST);
+          outCache := FCore.emptyCache();
+          Builtin.clearInitialGraph();
+        end if;
       then
         Values.BOOL(true);
 
@@ -1040,7 +1115,7 @@ algorithm
       algorithm
         true := System.regularFileExists(str1);
         b := System.regularFileExists(str2) and System.fileContentsEqual(str1,str2);
-        b := if not b then System.rename(str1,str2) else b;
+        b := if not b then System.rename(str1,str2) else System.removeFile(str1) == 0;
       then
         Values.BOOL(b);
 
@@ -1183,7 +1258,7 @@ algorithm
 
     case ("getImportedNames",{Values.CODE(Absyn.C_TYPENAME(path))})
       algorithm
-        (vals, cvars) := getImportedNames(Interactive.getPathedClassInProgram(path, SymbolTable.getAbsyn()));
+        (vals, cvars) := getImportedNames(InteractiveUtil.getPathedClassInProgram(path, SymbolTable.getAbsyn()));
         v := Values.TUPLE({ValuesUtil.makeArray(vals),ValuesUtil.makeArray(cvars)});
       then
         v;
@@ -1262,18 +1337,28 @@ algorithm
 
     case ("parseEncryptedPackage",Values.STRING(filename)::Values.STRING(workdir)::_)
       algorithm
-        vals := {};
-        (b, filename) := unZipEncryptedPackageAndCheckFile(workdir, filename, false);
-        if b then
-          // clear the errors before!
-          Error.clearMessages() "Clear messages";
-          Print.clearErrorBuf() "Clear error buffer";
-          filename := Testsuite.friendlyPath(filename);
-          (paths) := Interactive.parseFile(filename, "UTF-8");
-          vals := List.map(paths,ValuesUtil.makeCodeTypeName);
-        end if;
+        vals := {}; // make sure is initialized, see #9250
+        str := System.pwd();
+        try
+          0 := System.cd(System.dirname(filename));
+          (b, filename) := unZipEncryptedPackageAndCheckFile(workdir, filename, false);
+          if b then
+            // clear the errors before!
+            Error.clearMessages() "Clear messages";
+            Print.clearErrorBuf() "Clear error buffer";
+            filename := Testsuite.friendlyPath(filename);
+            (paths) := Interactive.parseFile(filename, "UTF-8");
+            vals := List.map(paths,ValuesUtil.makeCodeTypeName);
+          end if;
+        else
+        end try;
+        0 := System.cd(str);
       then
         ValuesUtil.makeArray(vals);
+
+    case ("parseEncryptedPackage",_)
+      then
+        ValuesUtil.makeArray({});
 
     case ("loadEncryptedPackage",Values.STRING(filename)::Values.STRING(workdir)::Values.BOOL(bval)::Values.BOOL(b)::Values.BOOL(b1)::Values.BOOL(requireExactVersion)::_)
       algorithm
@@ -1290,10 +1375,9 @@ algorithm
             SymbolTable.setAbsyn(newp);
           end if;
           outCache := FCore.emptyCache();
-          0 := System.cd(str);
         else
-          0 := System.cd(str);
         end try;
+        0 := System.cd(str);
       then
         Values.BOOL(b);
 
@@ -1308,8 +1392,8 @@ algorithm
     case ("reloadClass",{Values.CODE(Absyn.C_TYPENAME(classpath)),Values.STRING(encoding)})
       algorithm
         Absyn.CLASS(info=SOURCEINFO(fileName=filename,lastModification=r2)) :=
-          Interactive.getPathedClassInProgram(classpath, SymbolTable.getAbsyn());
-        (true,_,r1) := System.stat(filename);
+          InteractiveUtil.getPathedClassInProgram(classpath, SymbolTable.getAbsyn());
+        (true,_,r1,_) := System.stat(filename);
         if not realEq(r1, r2) then
           reloadClass(filename, encoding);
         end if;
@@ -1318,7 +1402,7 @@ algorithm
 
     case ("reloadClass",{Values.CODE(Absyn.C_TYPENAME(classpath)),_})
       algorithm
-        failure(_ := Interactive.getPathedClassInProgram(classpath, SymbolTable.getAbsyn()));
+        failure(_ := InteractiveUtil.getPathedClassInProgram(classpath, SymbolTable.getAbsyn()));
         Error.addMessage(Error.LOAD_MODEL_ERROR, {AbsynUtil.pathString(classpath)});
       then
         Values.BOOL(false);
@@ -1330,7 +1414,7 @@ algorithm
       algorithm
         str := if not (encoding == "UTF-8") then System.iconv(str, encoding, "UTF-8") else str;
         newp := Parser.parsestring(str,name);
-        newp := Interactive.updateProgram(newp, SymbolTable.getAbsyn(), mergeAST);
+        newp := InteractiveUtil.updateProgram(newp, SymbolTable.getAbsyn(), mergeAST);
         SymbolTable.setAbsyn(newp);
         outCache := FCore.emptyCache();
       then
@@ -1347,7 +1431,7 @@ algorithm
     case ("getTimeStamp",{Values.CODE(Absyn.C_TYPENAME(classpath))})
       algorithm
         Absyn.CLASS(info=SOURCEINFO(lastModification=r)) :=
-          Interactive.getPathedClassInProgram(classpath,SymbolTable.getAbsyn());
+          InteractiveUtil.getPathedClassInProgram(classpath,SymbolTable.getAbsyn());
         str := System.ctime(r);
       then
         Values.TUPLE({Values.REAL(r),Values.STRING(str)});
@@ -1438,7 +1522,6 @@ algorithm
           Values.BOOL(sort)})
       algorithm
         paths := InteractiveUtil.getAllSubtypeOf(path, parentClass, SymbolTable.getAbsyn(), qualified, includePartial);
-        paths := listReverse(paths);
         paths := if sort then List.sort(paths, AbsynUtil.pathGe) else paths;
         vals := List.map(paths,ValuesUtil.makeCodeTypeName);
       then
@@ -2217,9 +2300,9 @@ algorithm
 
         System.freeLibrary(libHandle, print_debug);
         // update the build time in the class!
-        Absyn.CLASS(_,_,_,_,Absyn.R_FUNCTION(_),_,info) := Interactive.getPathedClassInProgram(funcpath, p);
+        Absyn.CLASS(restriction=Absyn.R_FUNCTION(_),info=info) := InteractiveUtil.getPathedClassInProgram(funcpath, p);
 
-        w := Interactive.buildWithin(funcpath);
+        w := InteractiveUtil.buildWithin(funcpath);
 
         if Flags.isSet(Flags.DYN_LOAD) then
           print("[dynload]: Updating build time for function path: " + AbsynUtil.pathString(funcpath) + " within: " + Dump.unparseWithin(w) + "\n");
@@ -2744,7 +2827,7 @@ protected
   Absyn.Program p,newp;
 algorithm
   newp := Parser.parse(filename,encoding); /* Don't use the classloader since that can pull in entire directory structures. We only want to reload one single file. */
-  newp := Interactive.updateProgram(newp, SymbolTable.getAbsyn());
+  newp := InteractiveUtil.updateProgram(newp, SymbolTable.getAbsyn());
   SymbolTable.setAbsyn(newp);
 end reloadClass;
 
@@ -2776,14 +2859,14 @@ algorithm
     case ("modelica://",name,_,_,_)
       equation
         (name::names) = System.strtok(name,".");
-        Absyn.CLASS(info=SOURCEINFO(fileName=fileName)) = Interactive.getPathedClassInProgram(Absyn.IDENT(name),program);
+        Absyn.CLASS(info=SOURCEINFO(fileName=fileName)) = InteractiveUtil.getPathedClassInProgram(Absyn.IDENT(name),program);
         mp = System.dirname(fileName);
         bp = findModelicaPath2(mp,names,"",true);
       then bp;
     case ("modelica://",name,_,mp,_)
       equation
         (name::names) = System.strtok(name,".");
-        failure(_ = Interactive.getPathedClassInProgram(Absyn.IDENT(name),program));
+        failure(_ = InteractiveUtil.getPathedClassInProgram(Absyn.IDENT(name),program));
         gd = Autoconf.groupDelimiter;
         mps = System.strtok(mp, gd);
         (mp,name,isDir) = System.getLoadModelPath(name, {"default"}, mps);
@@ -2973,7 +3056,7 @@ algorithm
         false := valueEq(Absyn.IDENT("AllLoadedClasses"),className);
         p := SymbolTable.getAbsyn();
         scodeP := SymbolTable.getSCode();
-        absynClass := Interactive.getPathedClassInProgram(className, p);
+        absynClass := InteractiveUtil.getPathedClassInProgram(className, p);
         absynClass := if interface_only then AbsynUtil.getFunctionInterface(absynClass) else absynClass;
         absynClass := if short_only then AbsynUtil.getShortClass(absynClass) else absynClass;
         p := Absyn.PROGRAM({absynClass},Absyn.TOP());
@@ -3013,7 +3096,7 @@ algorithm
         end match;
         // handle encryption
         Values.ENUM_LITERAL(index=access) := Interactive.checkAccessAnnotationAndEncryption(path, SymbolTable.getAbsyn());
-        (absynClass as Absyn.CLASS(restriction=restriction, info=SOURCEINFO(fileName=str))) := Interactive.getPathedClassInProgram(className, SymbolTable.getAbsyn());
+        (absynClass as Absyn.CLASS(restriction=restriction, info=SOURCEINFO(fileName=str))) := InteractiveUtil.getPathedClassInProgram(className, SymbolTable.getAbsyn());
         absynClass := if nested then absynClass else AbsynUtil.filterNestedClasses(absynClass);
         /* If the class has Access.packageText annotation or higher
          * If the class has Access.nonPackageText annotation or higher and class is not a package
@@ -3054,19 +3137,19 @@ algorithm
   p := SymbolTable.getAbsyn();
 
   if builtin then
-    p := Interactive.updateProgram(p, FBuiltin.getInitialFunctions());
+    p := InteractiveUtil.updateProgram(p, FBuiltin.getInitialFunctions());
   end if;
 
   if AbsynUtil.pathEqual(path, Absyn.IDENT("AllLoadedClasses")) then
     if recursive then
-      (_, paths) := Interactive.getClassNamesRecursive(NONE(), p, protects, constants, {});
+      (_, paths) := InteractiveUtil.getClassNamesRecursive(NONE(), p, protects, constants, {});
       paths := listReverseInPlace(paths);
     else
       paths := Interactive.getTopClassnames(p);
     end if;
   else
     if recursive then
-      (_, paths) := Interactive.getClassNamesRecursive(SOME(path), p, protects, constants, {});
+      (_, paths) := InteractiveUtil.getClassNamesRecursive(SOME(path), p, protects, constants, {});
       paths := listReverseInPlace(paths);
     else
       paths := Interactive.getClassnamesInPath(path, p, protects, constants);
@@ -3386,7 +3469,7 @@ protected
   list<Absyn.Import> pub_imports_list , pro_imports_list;
   String imp_ident;
 algorithm
-  package_class := Interactive.getPathedClassInProgram(Absyn.IDENT(in_package_name), SymbolTable.getAbsyn());
+  package_class := InteractiveUtil.getPathedClassInProgram(Absyn.IDENT(in_package_name), SymbolTable.getAbsyn());
 
   (pub_imports_list , pro_imports_list) := getImportList(package_class);
 

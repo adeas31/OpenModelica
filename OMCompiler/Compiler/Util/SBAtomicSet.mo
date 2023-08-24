@@ -111,6 +111,13 @@ public
     res := new(SBMultiInterval.crossProd(set1.aset, set2.aset));
   end crossProd;
 
+  function cardinality
+    input SBAtomicSet set;
+    input output Integer card = 0;
+  algorithm
+    card := card + SBMultiInterval.cardinality(set.aset);
+  end cardinality;
+
   function aset
     input SBAtomicSet set;
     output SBMultiInterval res = set.aset;
@@ -138,8 +145,7 @@ public
 
   function hash
     input SBAtomicSet set1;
-    input Integer mod;
-    output Integer hash = SBMultiInterval.hash(set1.aset, mod);
+    output Integer hash = SBMultiInterval.hash(set1.aset);
   end hash;
 
   function toString

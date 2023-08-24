@@ -60,7 +60,7 @@
 #include <QScrollBar>
 #include <QGenericMatrix>
 
-#ifdef WIN32
+#if defined(_WIN32)
 #include <windows.h>
 #include <tlhelp32.h>
 #endif
@@ -218,12 +218,14 @@ class FixedCheckBox : public QCheckBox
   Q_OBJECT
 private:
   bool mDefaultValue;
-  bool mTickState;
+  bool mInheritedValue;
+  bool mFixedState;
 public:
   FixedCheckBox(QWidget *parent = 0);
-  void setTickState(bool defaultValue, bool tickStateString);
-  bool tickState() {return mTickState;}
-  QString tickStateString();
+  void setTickState(bool defaultValue, bool fixedState);
+  bool isDefaultValue() {return mDefaultValue;}
+  bool getInheritedValue() const {return mInheritedValue;}
+  QString getTickStateString() const;
 protected:
   virtual void paintEvent(QPaintEvent *event) override;
 };
@@ -387,34 +389,6 @@ private:
   QColor mColor;
 };
 
-class CodeColorsWidget : public QWidget
-{
-  Q_OBJECT
-public:
-  CodeColorsWidget(QWidget *pParent = 0);
-  QListWidget* getItemsListWidget() {return mpItemsListWidget;}
-  PreviewPlainTextEdit* getPreviewPlainTextEdit() {return mpPreviewPlainTextEdit;}
-private:
-  QGroupBox *mpColorsGroupBox;
-  Label *mpItemsLabel;
-  QListWidget *mpItemsListWidget;
-  Label *mpItemColorLabel;
-  QPushButton *mpItemColorPickButton;
-  Label *mpPreviewLabel;
-  PreviewPlainTextEdit *mpPreviewPlainTextEdit;
-  ListWidgetItem *mpTextItem;
-  ListWidgetItem *mpNumberItem;
-  ListWidgetItem *mpKeywordItem;
-  ListWidgetItem *mpTypeItem;
-  ListWidgetItem *mpFunctionItem;
-  ListWidgetItem *mpQuotesItem;
-  ListWidgetItem *mpCommentItem;
-signals:
-  void colorUpdated();
-private slots:
-  void pickColor();
-};
-
 /*!
  * \brief The VerticalScrollArea class
  * A scroll area with vertical bar and adjustment of width
@@ -445,7 +419,11 @@ class QDetachableProcess : public QProcess
   Q_OBJECT
 public:
   QDetachableProcess(QObject *pParent = 0);
+
   void start(const QString &program, const QStringList &arguments, OpenMode mode = ReadWrite);
+#if (QT_VERSION < QT_VERSION_CHECK(5, 15, 0))
+  void start(const QString &command, OpenMode mode = ReadWrite);
+#endif
 };
 
 class JsonDocument : public QObject
@@ -479,7 +457,7 @@ namespace Utilities {
     CRLFLineEnding = 0,
     LFLineEnding = 1,
     NativeLineEnding =
-#ifdef WIN32
+#if defined(_WIN32)
     CRLFLineEnding,
 #else
     LFLineEnding
@@ -508,15 +486,13 @@ namespace Utilities {
   void highlightParentheses(QPlainTextEdit *pPlainTextEdit, QTextCharFormat parenthesesMatchFormat, QTextCharFormat parenthesesMisMatchFormat);
   qint64 getProcessId(QProcess *pProcess);
   QString formatExitCode(int code);
-#ifdef WIN32
+#if defined(_WIN32)
   void killProcessTreeWindows(DWORD myprocID);
 #endif
   bool isCFile(QString extension);
   bool isModelicaFile(QString extension);
   QGenericMatrix<3,3, double> getRotationMatrix(QGenericMatrix<3,1,double> rotation);
-#ifdef WIN32
   QString getGDBPath();
-#endif
 
   namespace FileIconProvider {
     class FileIconProviderImplementation : public QFileIconProvider
@@ -542,9 +518,11 @@ namespace Utilities {
   void removeDirectoryRecursivly(QString path);
   qreal mapToCoOrdinateSystem(qreal value, qreal startA, qreal endA, qreal startB, qreal endB);
   QStringList variantListToStringList(const QVariantList lst);
-  QString convertUnitToSymbol(const QString displayUnit);
-  QString convertSymbolToUnit(const QString symbol);
+  void addDefaultDisplayUnit(const QString &unit, QStringList &displayUnit);
+  QString convertUnitToSymbol(const QString &displayUnit);
+  QString convertSymbolToUnit(const QString &symbol);
   QRectF adjustSceneRectangle(const QRectF sceneRectangle, const qreal factor);
+  void setToolTip(QComboBox *pComboBox, const QString &description, const QStringList &optionsDescriptions);
 } // namespace Utilities
 
 #endif // UTILITIES_H

@@ -159,7 +159,7 @@ public:
   void updateVariablesTreeItem(VariablesTreeItem *pVariablesTreeItem);
   QModelIndex variablesTreeItemIndex(const VariablesTreeItem *pVariablesTreeItem) const;
   bool insertVariablesItems(QString fileName, QString filePath, QStringList variablesList, SimulationOptions simulationOptions);
-  void parseInitXml(QXmlStreamReader &xmlReader, QStringList *variablesList);
+  void parseInitXml(QXmlStreamReader &xmlReader, SimulationOptions simulationOptions, QStringList *variablesList);
   bool removeVariableTreeItem(QString variable);
   void unCheckVariables(VariablesTreeItem *pVariablesTreeItem);
   void plotAllVariables(VariablesTreeItem *pVariablesTreeItem, OMPlot::PlotWindow *pPlotWindow);
@@ -205,6 +205,7 @@ typedef struct {
   QString variableName;
   QString unit;
   QString displayUnit;
+  bool isString;
 } PlotParametricVariable;
 
 typedef struct {
@@ -233,7 +234,10 @@ public:
   void reSimulate(bool showSetup);
   void interactiveReSimulation(QString modelName);
   void updateInitXmlFile(SimulationOptions simulationOptions);
-  void initializeVisualization(SimulationOptions simulationOptions);
+  void initializeVisualization();
+  void updateVisualization();
+  void updatePlotWindows();
+  void updateBrowserTime(double time);
   double readVariableValue(QString variable, double time);
   void closeResultFile();
 private:
@@ -261,15 +265,14 @@ private:
   csv_data *mpCSVData;
   QFile mPlotFileReader;
   void selectInteractivePlotWindow(VariablesTreeItem *pVariablesTreeItem);
-  void openResultFile();
-  void updateVisualization();
+  void openResultFile(double &startTime, double &stopTime);
   void checkVariable(const QModelIndex &index, bool checkState);
   void unCheckVariableAndErrorMessage(const QModelIndex &index, const QString &errorMessage);
   void unCheckCurveVariable(const QString &variable);
 public slots:
   void plotVariables(const QModelIndex &index, qreal curveThickness, int curveStyle, bool shiftKey, OMPlot::PlotCurve *pPlotCurve = 0, OMPlot::PlotWindow *pPlotWindow = 0);
   void unitChanged(const QModelIndex &index);
-  void simulationTimeChanged(int timePercent);
+  void simulationTimeChanged(int value);
   void valueEntered(const QModelIndex &index);
   void timeUnitChanged(QString unit);
   void updateVariablesTree(QMdiSubWindow *pSubWindow);
@@ -281,7 +284,7 @@ public slots:
 private slots:
   void playVisualization();
   void pauseVisualization();
-  void visulizationTimeChanged();
+  void visualizationTimeChanged();
   void visualizationSpeedChanged();
   void incrementVisualization();
 signals:

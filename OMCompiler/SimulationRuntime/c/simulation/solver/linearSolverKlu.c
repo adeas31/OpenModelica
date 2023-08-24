@@ -127,7 +127,7 @@ static int getAnalyticalJacobian(DATA* data, threadData_t *threadData,
   ANALYTIC_JACOBIAN* parentJacobian = systemData->parDynamicData[omc_get_thread_num()].parentJacobian;
 
   int nth = 0;
-  int nnz = jacobian->sparsePattern->numberOfNoneZeros;
+  int nnz = jacobian->sparsePattern->numberOfNonZeros;
 
   if (jacobian->constantEqns != NULL) {
     jacobian->constantEqns(data, threadData, jacobian, parentJacobian);
@@ -168,11 +168,10 @@ static int getAnalyticalJacobian(DATA* data, threadData_t *threadData,
 /*! \fn residual_wrapper for the residual function
  *
  */
-static int residual_wrapper(double* x, double* f, void** data, int sysNumber)
+static int residual_wrapper(double* x, double* f, RESIDUAL_USERDATA* userData, int sysNumber)
 {
   int iflag = 0;
-
-  (*((DATA*)data[0])->simulationInfo->linearSystemData[sysNumber].residualFunc)(data, x, f, &iflag);
+  userData->data->simulationInfo->linearSystemData[sysNumber].residualFunc(userData, x, f, &iflag);
   return 0;
 }
 
@@ -186,7 +185,7 @@ static int residual_wrapper(double* x, double* f, void** data, int sysNumber)
  */
 int solveKlu(DATA *data, threadData_t *threadData, int sysNumber, double* aux_x)
 {
-  void *dataAndThreadData[2] = {data, threadData};
+  RESIDUAL_USERDATA resUserData = {.data=data, .threadData=threadData, .solverData=NULL};
   LINEAR_SYSTEM_DATA* systemData = &(data->simulationInfo->linearSystemData[sysNumber]);
   DATA_KLU* solverData = (DATA_KLU*)systemData->parDynamicData[omc_get_thread_num()].solverData[0];
   _omc_scalar residualNorm = 0;
@@ -195,7 +194,7 @@ int solveKlu(DATA *data, threadData_t *threadData, int sysNumber, double* aux_x)
   double tmpJacEvalTime;
   int reuseMatrixJac = (data->simulationInfo->currentContext == CONTEXT_SYM_JACOBIAN && data->simulationInfo->currentJacobianEval > 0);
 
-  infoStreamPrintWithEquationIndexes(LOG_LS, 0, indexes, "Start solving Linear System %d (size %d) at time %g with Klu Solver",
+  infoStreamPrintWithEquationIndexes(LOG_LS, omc_dummyFileInfo, 0, indexes, "Start solving Linear System %d (size %d) at time %g with Klu Solver",
    eqSystemNumber, (int) systemData->size,
    data->localData[0]->timeValue);
 
@@ -227,7 +226,7 @@ int solveKlu(DATA *data, threadData_t *threadData, int sysNumber, double* aux_x)
     /* calculate vector b (rhs) */
     memcpy(solverData->work, aux_x, sizeof(double)*solverData->n_row);
 
-  residual_wrapper(solverData->work, systemData->parDynamicData[omc_get_thread_num()].b, dataAndThreadData, sysNumber);
+    residual_wrapper(solverData->work, systemData->parDynamicData[omc_get_thread_num()].b, &resUserData, sysNumber);
   }
   tmpJacEvalTime = rt_ext_tp_tock(&(solverData->timeClock));
   systemData->jacobianTime += tmpJacEvalTime;
@@ -309,13 +308,13 @@ int solveKlu(DATA *data, threadData_t *threadData, int sysNumber, double* aux_x)
         aux_x[i] += systemData->parDynamicData[omc_get_thread_num()].b[i];
 
       /* update inner equations */
-      residual_wrapper(aux_x, solverData->work, dataAndThreadData, sysNumber);
+      residual_wrapper(aux_x, solverData->work, &resUserData, sysNumber);
       residualNorm = _omc_gen_euclideanVectorNorm(solverData->work, solverData->n_row);
 
-      if ((isnan(residualNorm)) || (residualNorm>1e-4)){
-        warningStreamPrint(LOG_LS, 0,
-            "Failed to solve linear system of equations (no. %d) at time %f. Residual norm is %.15g.",
-            (int)systemData->equationIndex, data->localData[0]->timeValue, residualNorm);
+      if ((isnan(residualNorm)) || (residualNorm>1e-4)) {
+        warningStreamPrintWithLimit(LOG_LS, 0, ++(systemData->numberOfFailures) /* Update counter */, data->simulationInfo->maxWarnDisplays,
+                                    "Failed to solve linear system of equations (no. %d) at time %f. Residual norm is %.15g.",
+                                    (int)systemData->equationIndex, data->localData[0]->timeValue, residualNorm);
         success = 0;
       }
     } else {
@@ -340,9 +339,9 @@ int solveKlu(DATA *data, threadData_t *threadData, int sysNumber, double* aux_x)
   }
   else
   {
-    warningStreamPrint(LOG_STDOUT, 0,
-      "Failed to solve linear system of equations (no. %d) at time %f, system status %d.",
-        (int)systemData->equationIndex, data->localData[0]->timeValue, status);
+    warningStreamPrintWithLimit(LOG_STDOUT, 0, ++(systemData->numberOfFailures) /* Update counter */, data->simulationInfo->maxWarnDisplays,
+                                "Failed to solve linear system of equations (no. %d) at time %f, system status %d.",
+                                (int)systemData->equationIndex, data->localData[0]->timeValue, status);
   }
   solverData->numberSolving += 1;
 

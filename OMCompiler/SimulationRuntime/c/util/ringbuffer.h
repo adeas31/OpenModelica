@@ -51,13 +51,16 @@ extern "C" {
 
   void appendRingData(RINGBUFFER *rb, void *value);
   void dequeueNFirstRingDatas(RINGBUFFER *rb, int n);
+  void removeLastRingData(RINGBUFFER *rb, int n);
 
   int ringBufferLength(RINGBUFFER *rb);
 
-  void rotateRingBuffer(RINGBUFFER *rb, int n, void **lookup);
+  void rotateRingBuffer(RINGBUFFER *rb, int n);
+  void lookupRingBuffer(RINGBUFFER *rb, void **lookup);
 
-  void infoRingBuffer(RINGBUFFER *rb);
+  void infoRingBuffer(RINGBUFFER *rb, int stream);
 
+  void printRingBuffer(RINGBUFFER *rb, int stream, void (*printDataFunc)(void*,int,void*));
 #ifdef __cplusplus
 }
 #endif

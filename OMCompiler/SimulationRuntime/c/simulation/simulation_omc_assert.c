@@ -30,10 +30,16 @@
 
 #include <stdarg.h>
 #include <stddef.h>
-#include "../util/omc_error.h"
 #include "../util/utility.h"
 #include "../meta/meta_modelica.h"
+#include "simulation_omc_assert.h"
 #include "simulation_runtime.h"
+
+
+void (*omc_assert_withEquationIndexes)(threadData_t*, FILE_INFO info, const int *indexes, const char *msg, ...)  __attribute__ ((noreturn)) = omc_assert_simulation_withEquationIndexes;
+
+void (*omc_assert_warning_withEquationIndexes)(FILE_INFO info, const int *indexes, const char *msg, ...) = omc_assert_warning_simulation_withEquationIndexes;
+
 
 int terminationTerminate = 0; /* Becomes non-zero when user terminates simulation. */
 FILE_INFO TermInfo;           /* message for termination. */
@@ -63,11 +69,6 @@ static void setTermMsg(const char *msg, va_list ap)
   }
 }
 
-static void omc_assert_simulation(threadData_t *threadData, FILE_INFO info, const char *msg, ...) __attribute__ ((noreturn));
-static void omc_assert_simulation_withEquationIndexes(threadData_t *threadData, FILE_INFO info, const int *indexes, const char *msg, ...) __attribute__ ((noreturn));
-static void omc_throw_simulation(threadData_t* threadData) __attribute__ ((noreturn));
-static void va_omc_assert_simulation_withEquationIndexes(threadData_t *threadData, FILE_INFO info, const int *indexes, const char *msg, va_list args) __attribute__ ((noreturn));
-
 static void va_omc_assert_simulation_withEquationIndexes(threadData_t *threadData, FILE_INFO info, const int *indexes, const char *msg, va_list args)
 {
   threadData = threadData ? threadData : (threadData_t*)pthread_getspecific(mmc_thread_data_key);
@@ -75,13 +76,13 @@ static void va_omc_assert_simulation_withEquationIndexes(threadData_t *threadDat
   {
   case ERROR_EVENTSEARCH:
   case ERROR_SIMULATION:
-    va_errorStreamPrintWithEquationIndexes(LOG_ASSERT, 0, indexes, msg, args);
+    va_errorStreamPrintWithEquationIndexes(LOG_ASSERT, info, 0, indexes, msg, args);
     longjmp(*threadData->simulationJumpBuffer,1);
     break;
   case ERROR_NONLINEARSOLVER:
     if(ACTIVE_STREAM(LOG_NLS))
     {
-      va_errorStreamPrintWithEquationIndexes(LOG_ASSERT, 0, indexes, msg, args);
+      va_errorStreamPrintWithEquationIndexes(LOG_ASSERT, info, 0, indexes, msg, args);
     }
 #ifndef OMC_EMCC
     longjmp(*threadData->simulationJumpBuffer,1);
@@ -90,44 +91,46 @@ static void va_omc_assert_simulation_withEquationIndexes(threadData_t *threadDat
   case ERROR_INTEGRATOR:
     if(ACTIVE_STREAM(LOG_SOLVER))
     {
-      va_errorStreamPrintWithEquationIndexes(LOG_ASSERT, 0, indexes, msg, args);
+      va_errorStreamPrintWithEquationIndexes(LOG_ASSERT, info, 0, indexes, msg, args);
     }
     longjmp(*threadData->simulationJumpBuffer,1);
     break;
   case ERROR_EVENTHANDLING:
-    va_errorStreamPrintWithEquationIndexes(LOG_ASSERT, 0, indexes, msg, args);
+    va_errorStreamPrintWithEquationIndexes(LOG_ASSERT, info, 0, indexes, msg, args);
     longjmp(threadData->globalJumpBuffer ? *threadData->globalJumpBuffer : *threadData->mmc_jumper, 1);
     break;
   case ERROR_OPTIMIZE:
   default:
-    va_errorStreamPrintWithEquationIndexes(LOG_ASSERT, 0, indexes, msg, args);
+    va_errorStreamPrintWithEquationIndexes(LOG_ASSERT, info, 0, indexes, msg, args);
     throwStreamPrint(threadData, "Untreated assertion has been detected.");
   }
 }
 
-static void omc_assert_simulation(threadData_t *threadData, FILE_INFO info, const char *msg, ...)
+void omc_assert_simulation(threadData_t *threadData, FILE_INFO info, const char *msg, ...)
 {
   va_list args;
   va_start(args, msg);
   va_omc_assert_simulation_withEquationIndexes(threadData, info, NULL, msg, args);
   va_end(args);
+  abort();  // Silence invalid noreturn warning. This is never reached.
 }
 
-static void omc_assert_simulation_withEquationIndexes(threadData_t *threadData, FILE_INFO info, const int *indexes, const char *msg, ...)
+void omc_assert_simulation_withEquationIndexes(threadData_t *threadData, FILE_INFO info, const int *indexes, const char *msg, ...)
 {
   va_list args;
   va_start(args, msg);
   va_omc_assert_simulation_withEquationIndexes(threadData, info, indexes, msg, args);
   va_end(args);
+  abort();  // Silence invalid noreturn warning. This is never reached.
 }
 
 
 static void va_omc_assert_warning_simulation(FILE_INFO info, const int *indexes, const char *msg, va_list args)
 {
-  va_warningStreamPrintWithEquationIndexes(LOG_ASSERT, 0, indexes, msg, args);
+  va_warningStreamPrintWithEquationIndexes(LOG_ASSERT, info, 0, indexes, msg, args);
 }
 
-static void omc_assert_warning_simulation(FILE_INFO info, const char *msg, ...)
+void omc_assert_warning_simulation(FILE_INFO info, const char *msg, ...)
 {
   va_list args;
   va_start(args, msg);
@@ -135,7 +138,7 @@ static void omc_assert_warning_simulation(FILE_INFO info, const char *msg, ...)
   va_end(args);
 }
 
-static void omc_assert_warning_simulation_withEquationIndexes(FILE_INFO info, const int *indexes, const char *msg, ...)
+void omc_assert_warning_simulation_withEquationIndexes(FILE_INFO info, const int *indexes, const char *msg, ...)
 {
   va_list args;
   va_start(args, msg);
@@ -143,7 +146,7 @@ static void omc_assert_warning_simulation_withEquationIndexes(FILE_INFO info, co
   va_end(args);
 }
 
-static void omc_terminate_simulation(FILE_INFO info, const char *msg, ...)
+void omc_terminate_simulation(FILE_INFO info, const char *msg, ...)
 {
   va_list ap;
   va_start(ap,msg);
@@ -164,18 +167,10 @@ void setTermMsg_empty_va_list(const char *msg, ...) {
   va_end(dummy);
 }
 
-static void omc_throw_simulation(threadData_t* threadData)
+void omc_throw_simulation(threadData_t* threadData)
 {
   setTermMsg_empty_va_list("Assertion triggered by external C function");
   set_struct(FILE_INFO, TermInfo, omc_dummyFileInfo);
   threadData = threadData ? threadData : (threadData_t*)pthread_getspecific(mmc_thread_data_key);
   longjmp(*threadData->globalJumpBuffer, 1);
 }
-
-void (*omc_assert)(threadData_t*, FILE_INFO info, const char *msg, ...)  __attribute__ ((noreturn)) = omc_assert_simulation;
-void (*omc_assert_withEquationIndexes)(threadData_t*, FILE_INFO info, const int *indexes, const char *msg, ...)  __attribute__ ((noreturn)) = omc_assert_simulation_withEquationIndexes;
-
-void (*omc_assert_warning_withEquationIndexes)(FILE_INFO info, const int *indexes, const char *msg, ...) = omc_assert_warning_simulation_withEquationIndexes;
-void (*omc_assert_warning)(FILE_INFO info, const char *msg, ...) = omc_assert_warning_simulation;
-void (*omc_terminate)(FILE_INFO info, const char *msg, ...) = omc_terminate_simulation;
-void (*omc_throw)(threadData_t*) __attribute__ ((noreturn)) = omc_throw_simulation;

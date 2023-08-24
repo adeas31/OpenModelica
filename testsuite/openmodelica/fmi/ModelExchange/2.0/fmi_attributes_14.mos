@@ -3,6 +3,9 @@
 // status: correct
 // teardown_command: rm -rf fmi_attributes_14.fmu fmi_attributes_14.log fmi_attributes_14.xml fmi_attributes_14_tmp.xml fmi_attributes_14.fmutmp/
 
+setCommandLineOptions("-d=newInst,-disableDirectionalDerivatives,fmuExperimental");
+getErrorString();
+
 loadString("
 model fmi_attributes_14
   input Real u;
@@ -25,7 +28,7 @@ end fmi_attributes_14;
 "); getErrorString();
 
 setCommandLineOptions("--fmiFilter=internal"); getErrorString();
-translateModelFMU(fmi_attributes_14); getErrorString();
+buildModelFMU(fmi_attributes_14); getErrorString();
 
 // unzip to console, quiet, extra quiet
 system("unzip -cqq fmi_attributes_14.fmu modelDescription.xml > fmi_attributes_14_tmp.xml"); getErrorString();
@@ -37,6 +40,8 @@ readFile("fmi_attributes_14.xml"); getErrorString();
 
 
 // Result:
+// true
+// ""
 // true
 // ""
 // true

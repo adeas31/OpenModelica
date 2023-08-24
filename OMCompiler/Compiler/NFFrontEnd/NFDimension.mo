@@ -36,6 +36,7 @@ protected
   import Prefixes = NFPrefixes;
   import List;
   import SimplifyExp = NFSimplifyExp;
+  import Ceval = NFCeval;
 
 public
   import Absyn.{Exp, Path, Subscript};
@@ -46,6 +47,7 @@ public
   import ComponentRef = NFComponentRef;
   import NFPrefixes.Variability;
   import Inst = NFInst;
+  import NFCeval.EvalTarget;
 
   record RAW_DIM
     Absyn.Subscript dim;
@@ -114,16 +116,52 @@ public
     end match;
   end fromExp;
 
+  function fromRange
+    input Expression range "needs to be RANGE()";
+    output Dimension dim;
+  protected
+    Integer start, step, stop;
+  algorithm
+    (start, step, stop) := match range
+      case Expression.RANGE(start = Expression.INTEGER(start),
+                            step  = NONE(),
+                            stop  = Expression.INTEGER(stop))
+      then (start, 1, stop);
+      case Expression.RANGE(start = Expression.INTEGER(start),
+                            step  = SOME(Expression.INTEGER(step)),
+                            stop  = Expression.INTEGER(stop))
+      then (start, step, stop);
+      else algorithm
+        Error.assertion(false, getInstanceName() + " got non-range expression: " + Expression.toString(range), sourceInfo());
+      then fail();
+    end match;
+
+    dim := INTEGER(realInt((stop-start)/step + 1), NFPrefixes.Variability.CONSTANT);
+  end fromRange;
+
   function fromInteger
     input Integer n;
     input Variability var = Variability.CONSTANT;
     output Dimension dim = INTEGER(n, var);
   end fromInteger;
 
+  function fromExpArray
+    input array<Expression> expl;
+    output Dimension dim = INTEGER(arrayLength(expl), Variability.CONSTANT);
+  end fromExpArray;
+
   function fromExpList
     input list<Expression> expl;
     output Dimension dim = INTEGER(listLength(expl), Variability.CONSTANT);
   end fromExpList;
+
+  function toRange
+    input Dimension dim;
+    output Expression range;
+  algorithm
+    range := Expression.RANGE(Type.liftArrayLeft(typeOf(dim), dim),
+      lowerBoundExp(dim), NONE(), upperBoundExp(dim));
+  end toRange;
 
   function toDAE
     input Dimension dim;
@@ -170,6 +208,16 @@ public
       case ENUM(enumType = ty as Type.ENUMERATION()) then listLength(ty.literals);
     end match;
   end size;
+
+  function sizesProduct
+    "Returns the product of the given dimension sizes."
+    input list<Dimension> dims;
+    output Integer outSize = 1;
+  algorithm
+    for dim in dims loop
+      outSize := outSize * Dimension.size(dim);
+    end for;
+  end sizesProduct;
 
   function isEqual
     input Dimension dim1;
@@ -312,7 +360,7 @@ public
   function endExp
     "Returns an expression for the last index in a dimension."
     input Dimension dim;
-    input ComponentRef cref;
+    input Expression subscriptedExp;
     input Integer index;
     output Expression sizeExp;
   algorithm
@@ -326,8 +374,13 @@ public
         then Expression.makeEnumLiteral(ty, listLength(ty.literals));
       case EXP() then dim.exp;
       case UNKNOWN()
-        then Expression.SIZE(Expression.CREF(Type.UNKNOWN(), ComponentRef.stripSubscripts(cref)),
-                             SOME(Expression.INTEGER(index)));
+        then match subscriptedExp
+          case Expression.CREF()
+            then Expression.SIZE(Expression.fromCref(ComponentRef.stripSubscripts(subscriptedExp.cref)),
+                                 SOME(Expression.INTEGER(index)));
+          case Expression.SUBSCRIPTED_EXP()
+            then Expression.SIZE(subscriptedExp.exp, SOME(Expression.INTEGER(index)));
+        end match;
     end match;
   end endExp;
 
@@ -480,6 +533,17 @@ public
       arg := foldExp(dim, func, arg);
     end for;
   end foldExpList;
+
+  function eval
+    input Dimension dim;
+    input EvalTarget target = EvalTarget.IGNORE_ERRORS();
+    output Dimension outDim;
+  algorithm
+    outDim := match dim
+      case EXP() then fromExp(Ceval.evalExp(dim.exp, target), dim.var);
+      else dim;
+    end match;
+  end eval;
 
   function simplify
     input output Dimension dim;

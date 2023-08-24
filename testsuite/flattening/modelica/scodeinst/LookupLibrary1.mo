@@ -6,7 +6,7 @@
 // Tests that libraries can be looked up even when not explicitly loaded.
 //
 
-class LookupLibrary1
+model LookupLibrary1
   Modelica.Units.SI.Angle angle;
 end LookupLibrary1;
 
@@ -14,8 +14,8 @@ end LookupLibrary1;
 // class LookupLibrary1
 //   Real angle(quantity = "Angle", unit = "rad", displayUnit = "deg");
 // end LookupLibrary1;
-// Notification: Automatically loaded package Complex 4.0.0 due to uses annotation.
-// Notification: Automatically loaded package ModelicaServices 4.0.0 due to uses annotation.
+// Notification: Automatically loaded package Complex 4.0.0 due to uses annotation from Modelica.
+// Notification: Automatically loaded package ModelicaServices 4.0.0 due to uses annotation from Modelica.
 // Notification: Automatically loaded package Modelica 4.0.0 due to usage.
 //
 // endResult

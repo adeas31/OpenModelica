@@ -61,10 +61,24 @@ import Record = NFRecord;
 import Flatten = NFFlatten;
 
 public
+
+uniontype EvalSettings
+  record SETTINGS
+    Boolean scalarize;
+  end SETTINGS;
+end EvalSettings;
+
 function evaluate
   input output FlatModel flatModel;
+  input InstContext.Type context;
+protected
+  EvalSettings settings;
 algorithm
-  flatModel.variables := list(evaluateVariable(v) for v in flatModel.variables);
+  settings := EvalSettings.SETTINGS(
+    Flags.isSet(Flags.NF_SCALARIZE)
+  );
+
+  flatModel.variables := list(evaluateVariable(v, context, settings) for v in flatModel.variables);
   flatModel.equations := evaluateEquations(flatModel.equations);
   flatModel.initialEquations := evaluateEquations(flatModel.initialEquations);
   flatModel.algorithms := evaluateAlgorithms(flatModel.algorithms);
@@ -75,24 +89,28 @@ end evaluate;
 
 function evaluateVariable
   input output Variable var;
+  input InstContext.Type context;
+  input EvalSettings settings;
 protected
   Binding binding;
 algorithm
   binding := evaluateBinding(var.binding, var.name,
-    Variable.variability(var) <= Variability.STRUCTURAL_PARAMETER);
+    Variable.variability(var) <= Variability.STRUCTURAL_PARAMETER, context, settings);
 
   if not referenceEq(binding, var.binding) then
     var.binding := binding;
   end if;
 
-  var.typeAttributes := list(evaluateTypeAttribute(a, var.name) for a in var.typeAttributes);
-  var.children := list(evaluateVariable(v) for v in var.children);
+  var.typeAttributes := list(evaluateTypeAttribute(a, var.name, context, settings) for a in var.typeAttributes);
+  var.children := list(evaluateVariable(v, context, settings) for v in var.children);
 end evaluateVariable;
 
 function evaluateBinding
   input output Binding binding;
   input ComponentRef prefix;
   input Boolean structural;
+  input InstContext.Type context;
+  input EvalSettings settings;
 protected
   Expression exp, eexp;
   SourceInfo info;
@@ -101,8 +119,15 @@ algorithm
     exp := Binding.getTypedExp(binding);
 
     if structural then
-      eexp := Ceval.evalExp(exp, Ceval.EvalTarget.ATTRIBUTE(binding));
-      eexp := Flatten.flattenExp(eexp, prefix);
+      if not settings.scalarize and Expression.isLiteralFill(exp) then
+        eexp := exp;
+      elseif InstContext.inRelaxed(context) then
+        eexp := Ceval.tryEvalExp(exp);
+      else
+        eexp := Ceval.evalExp(exp, Ceval.EvalTarget.ATTRIBUTE(binding));
+      end if;
+
+      eexp := Flatten.flattenExp(eexp, Flatten.PREFIX(prefix));
     else
       info := Binding.getInfo(binding);
       eexp := evaluateExp(exp, info);
@@ -117,6 +142,8 @@ end evaluateBinding;
 function evaluateTypeAttribute
   input output tuple<String, Binding> attribute;
   input ComponentRef prefix;
+  input InstContext.Type context;
+  input EvalSettings settings;
 protected
   String name;
   Binding binding, sbinding;
@@ -124,7 +151,7 @@ protected
 algorithm
   (name, binding) := attribute;
   structural := name == "fixed" or name == "stateSelect";
-  sbinding := evaluateBinding(binding, prefix, structural);
+  sbinding := evaluateBinding(binding, prefix, structural, context, settings);
 
   if not referenceEq(binding, sbinding) then
     attribute := (name, sbinding);
@@ -164,7 +191,7 @@ protected
   Type ty, ty2;
   Variability var;
 algorithm
-  outExp := match exp
+  (outExp, outChanged) := match exp
     case Expression.CREF()
       algorithm
         (outExp as Expression.CREF(cref = cref, ty = ty), outChanged) :=
@@ -174,7 +201,7 @@ algorithm
         if ComponentRef.nodeVariability(cref) <= Variability.STRUCTURAL_PARAMETER then
           // Evaluate all constants and structural parameters.
           outExp := Ceval.evalCref(cref, outExp, Ceval.EvalTarget.IGNORE_ERRORS(), evalSubscripts = false);
-          outExp := Flatten.flattenExp(outExp, cref);
+          outExp := Flatten.flattenExp(outExp, Flatten.Prefix.PREFIX(cref));
           outChanged := true;
         elseif outChanged then
           ty := ComponentRef.getSubscriptedType(cref);
@@ -185,26 +212,41 @@ algorithm
           outExp := Expression.setType(ty2, outExp);
         end if;
       then
-        outExp;
+        (outExp, outChanged);
 
-    case Expression.IF()
+    case Expression.ARRAY(literal = true)
+      then (exp, false);
+
+    case Expression.IF() then evaluateIfExp(exp, info);
+
+    // Only evaluate the index for size expressions.
+    case Expression.SIZE()
       algorithm
-        (outExp, outChanged) := evaluateIfExp(exp, info);
-      then
-        outExp;
+        if isSome(exp.dimIndex) then
+          SOME(e) := exp.dimIndex;
+          (e, outChanged) := Expression.mapFoldShallow(e,
+            function evaluateExpTraverser(info = info), false);
 
-    // TODO: The return type of calls can have dimensions that reference
-    //       function parameters, and thus can't be evaluated. This should be
-    //       fixed so that the return type reference the input arguments instead.
-    case Expression.CALL()
+          if outChanged then
+            exp.dimIndex := SOME(e);
+          end if;
+        end if;
+      then
+        (exp, outChanged);
+
+    case Expression.RANGE()
       algorithm
         (outExp, outChanged) := Expression.mapFoldShallow(exp,
           function evaluateExpTraverser(info = info), false);
-      then
-        outExp;
 
-    case Expression.SIZE()
-      then Expression.SIZE(exp.exp, evaluateExpOpt(exp.dimIndex, info));
+        // If anything in a range is evaluated its better to just retype it
+        // rather than evaluating the type, since it's usually faster and gives
+        // better results in some cases.
+        if outChanged then
+          outExp := Expression.retype(outExp);
+        end if;
+      then
+        (outExp, outChanged);
 
     else
       algorithm
@@ -214,7 +256,7 @@ algorithm
         ty := Expression.typeOf(outExp);
         ty2 := evaluateType(ty, info);
       then
-        if referenceEq(ty, ty2) then outExp else Expression.setType(ty2, outExp);
+        (if referenceEq(ty, ty2) then outExp else Expression.setType(ty2, outExp), outChanged);
   end match;
 
   outChanged := changed or outChanged;
@@ -351,14 +393,14 @@ algorithm
         e1 := evaluateExp(eq.lhs, info);
         e2 := evaluateExp(eq.rhs, info);
       then
-        Equation.EQUALITY(e1, e2, ty, eq.source);
+        Equation.EQUALITY(e1, e2, ty, eq.scope, eq.source);
 
     case Equation.ARRAY_EQUALITY()
       algorithm
         ty := Type.mapDims(eq.ty, function evaluateDimension(info = info));
         e2 := evaluateExp(eq.rhs, info);
       then
-        Equation.ARRAY_EQUALITY(eq.lhs, e2, ty, eq.source);
+        Equation.ARRAY_EQUALITY(eq.lhs, e2, ty, eq.scope, eq.source);
 
     case Equation.FOR()
       algorithm
@@ -386,7 +428,7 @@ algorithm
         e2 := evaluateExp(eq.message, info);
         e3 := evaluateExp(eq.level, info);
       then
-        Equation.ASSERT(e1, e2, e3, eq.source);
+        Equation.ASSERT(e1, e2, e3, eq.scope, eq.source);
 
     case Equation.TERMINATE()
       algorithm
@@ -499,6 +541,12 @@ algorithm
       then
         stmt;
 
+    case Statement.REINIT()
+      algorithm
+        stmt.reinitExp := evaluateExp(stmt.reinitExp, info);
+      then
+        stmt;
+
     case Statement.NORETCALL()
       algorithm
         stmt.exp := evaluateExp(stmt.exp, info);
@@ -543,7 +591,8 @@ algorithm
     is_con := Function.isDefaultRecordConstructor(func);
 
     func := Function.mapExp(func,
-      function evaluateFuncExp(fnNode = func.node, evaluateAll = is_con));
+      function evaluateFuncExp(fnNode = func.node, evaluateAll = is_con),
+      function evaluateFuncExp(fnNode = func.node, evaluateAll = true));
 
     if is_con then
       Record.checkLocalFieldOrder(func.locals, func.node, InstNode.info(func.node));
@@ -618,7 +667,7 @@ algorithm
   if ComponentRef.isPackageConstant(cref) then
     res := false;
   elseif ComponentRef.nodeVariability(cref) <= Variability.PARAMETER and ComponentRef.isCref(cref) then
-    node := InstNode.derivedParent(ComponentRef.node(ComponentRef.last(cref)));
+    node := InstNode.instanceParent(ComponentRef.node(ComponentRef.last(cref)));
 
     if InstNode.isClass(node) then
       fnl := Function.getCachedFuncs(node);

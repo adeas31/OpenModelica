@@ -160,7 +160,7 @@ package ConnectorType
   end setConnector;
 
   function isConnectorType
-    "Returns treu if the connector type has the connector, expandable, or
+    "Returns true if the connector type has the connector, expandable, or
      potentially present bits set, otherwise false."
     input Type cty;
     output Boolean isConnector;
@@ -664,6 +664,26 @@ function mergeVisibility
   input Visibility innerVis;
   output Visibility vis = if outerVis == Visibility.PROTECTED then outerVis else innerVis;
 end mergeVisibility;
+
+function isReplaceable
+  input Replaceable repl;
+  output Boolean res;
+algorithm
+  res := match repl
+    case Replaceable.REPLACEABLE() then true;
+    else false;
+  end match;
+end isReplaceable;
+
+function replaceableString
+  input Replaceable repl;
+  output String str;
+algorithm
+  str := match repl
+    case Replaceable.REPLACEABLE() then "replaceable";
+    else "";
+  end match;
+end replaceableString;
 
 function unparseReplaceable
   input Replaceable repl;

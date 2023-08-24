@@ -35,6 +35,7 @@ protected
   import Error;
   import MetaModelica.Dangerous.listReverseInPlace;
   import Connection = NFConnection;
+  import List;
 
 public
   record CONNECTION
@@ -52,12 +53,7 @@ public
   algorithm
     cls := Connector.split(conn.lhs);
     crs := Connector.split(conn.rhs);
-
-    if listLength(cls) <> listLength(crs) then
-      Error.assertion(false, getInstanceName() + " got unbalanced connection " + toString(conn) + " (lhs: " +
-        String(listLength(cls)) + ", rhs: " + String(listLength(crs)) + ")", sourceInfo());
-      fail();
-    end if;
+    checkBalance(cls, crs, conn);
 
     for cl in cls loop
       cr :: crs := crs;
@@ -73,12 +69,74 @@ public
     conns := listReverseInPlace(conns);
   end split;
 
+  function scalarize
+    input Connection conn;
+    output list<Connection> conns = {};
+  protected
+    list<Connector> cls, crs;
+    Connector cr;
+  algorithm
+    if not Connector.isArray(conn.lhs) then
+      conns := {conn};
+      return;
+    end if;
+
+    cls := Connector.scalarize(conn.lhs);
+    crs := Connector.scalarize(conn.rhs);
+    checkBalance(cls, crs, conn);
+
+    for cl in cls loop
+      cr :: crs := crs;
+      conns := CONNECTION(cl, cr) :: conns;
+    end for;
+
+    conns := listReverseInPlace(conns);
+  end scalarize;
+
+  function scalarizePrefix
+    input Connection conn;
+    output list<Connection> conns = {};
+  protected
+    list<Connector> cls, crs;
+    Connector cr;
+  algorithm
+    if not Connector.isArray(conn.lhs) then
+      conns := {conn};
+      return;
+    end if;
+
+    cls := Connector.scalarizePrefix(conn.lhs);
+    crs := Connector.scalarizePrefix(conn.rhs);
+    checkBalance(cls, crs, conn);
+
+    for cl in cls loop
+      cr :: crs := crs;
+      conns := CONNECTION(cl, cr) :: conns;
+    end for;
+
+    conns := listReverseInPlace(conns);
+  end scalarizePrefix;
+
   function toString
     input Connection conn;
     output String str;
   algorithm
     str := "connect(" + Connector.toString(conn.lhs) + ", " + Connector.toString(conn.rhs) + ")";
   end toString;
+
+protected
+  function checkBalance
+    input list<Connector> leftConnectors;
+    input list<Connector> rightConnectors;
+    input Connection conn;
+  algorithm
+    if listLength(leftConnectors) <> listLength(rightConnectors) then
+      Error.assertion(false, getInstanceName() + " got unbalanced connection " + toString(conn) + ":" +
+        List.toString(leftConnectors, Connector.toString, "\n  lhs: ", "{", ", ", "}", true) +
+        List.toString(rightConnectors, Connector.toString, "\n  rhs: ", "{", ", ", "}", true), sourceInfo());
+      fail();
+    end if;
+  end checkBalance;
 
   annotation(__OpenModelica_Interface="frontend");
 end NFConnection;

@@ -1,8 +1,8 @@
 def common
-def shouldWeBuildOSX
 def shouldWeBuildMINGW
-def shouldWeBuildCENTOS7
-def shouldWeSkipCMakeBuild_value
+def shouldWeDisableAllCMakeBuilds_value
+def shouldWeEnableMacOSCMakeBuild_value
+def shouldWeEnableMinGWCMakeBuild_value
 def shouldWeRunTests
 def isPR
 pipeline {
@@ -15,17 +15,17 @@ pipeline {
     LC_ALL = 'C.UTF-8'
   }
   parameters {
-    booleanParam(name: 'BUILD_OSX', defaultValue: false, description: 'Build with OSX')
     booleanParam(name: 'BUILD_MINGW', defaultValue: false, description: 'Build with Win/MinGW')
-    booleanParam(name: 'BUILD_CENTOS7', defaultValue: false, description: 'Build on CentOS7 with CMake 2.8')
-    booleanParam(name: 'SKIP_CMAKE_BUILD', defaultValue: false, description: 'Skip building omc with the CMake build system (CMake 3.17.2)')
+    booleanParam(name: 'DISABLE_ALL_CMAKE_BUILDS', defaultValue: false, description: 'Skip building omc with CMake (CMake 3.17.2) on all platforms')
+    booleanParam(name: 'ENABLE_MINGW_CMAKE_BUILD', defaultValue: false, description: 'Enable building omc with CMake on MinGW')
+    booleanParam(name: 'ENABLE_MACOS_CMAKE_BUILD', defaultValue: false, description: 'Enable building omc with CMake on macOS')
   }
   // stages are ordered according to execution time; highest time first
   // nodes are selected based on a priority (in Jenkins config)
   stages {
     stage('Environment') {
       agent {
-        label '!windows'
+        label 'linux'
       }
       steps {
         script {
@@ -37,14 +37,14 @@ pipeline {
           common = load("${env.workspace}/.CI/common.groovy")
           isPR = common.isPR()
           print "isPR: ${isPR}"
-          shouldWeBuildOSX = common.shouldWeBuildOSX()
-          print "shouldWeBuildOSX: ${shouldWeBuildOSX}"
           shouldWeBuildMINGW = common.shouldWeBuildMINGW()
           print "shouldWeBuildMINGW: ${shouldWeBuildMINGW}"
-          shouldWeBuildCENTOS7 = common.shouldWeBuildCENTOS7()
-          print "shouldWeBuildCENTOS7: ${shouldWeBuildCENTOS7}"
-          shouldWeSkipCMakeBuild_value = common.shouldWeSkipCMakeBuild()
-          print "shouldWeSkipCMakeBuild: ${shouldWeSkipCMakeBuild_value}"
+          shouldWeDisableAllCMakeBuilds_value = common.shouldWeDisableAllCMakeBuilds()
+          print "shouldWeDisableAllCMakeBuilds: ${shouldWeDisableAllCMakeBuilds_value}"
+          shouldWeEnableMacOSCMakeBuild_value = common.shouldWeEnableMacOSCMakeBuild()
+          print "shouldWeEnableMacOSCMakeBuild: ${shouldWeEnableMacOSCMakeBuild_value}"
+          shouldWeEnableMinGWCMakeBuild_value = common.shouldWeEnableMinGWCMakeBuild()
+          print "shouldWeEnableMinGWCMakeBuild: ${shouldWeEnableMinGWCMakeBuild_value}"
           shouldWeRunTests = common.shouldWeRunTests()
           print "shouldWeRunTests: ${shouldWeRunTests}"
         }
@@ -86,42 +86,9 @@ pipeline {
               common.buildOMC('clang', 'clang++', '--without-hwloc', true, true)
               common.getVersion()
             }
+            // Resolve symbolic links to make Jenkins happy
+            sh 'cp -Lr build build.new && rm -rf build && mv build.new build'
             stash name: 'omc-clang', includes: 'build/**, **/config.status'
-          }
-        }
-        stage('MacOS') {
-          agent {
-            node {
-              label 'osx'
-            }
-          }
-          when {
-            beforeAgent true
-            expression { shouldWeBuildOSX }
-          }
-          environment {
-            RUNTESTDB = '/Users/hudson/jenkins-cache/runtest/'
-            LIBRARIES = '/Users/hudson/jenkins-cache/omlibrary'
-            GMAKE = 'gmake'
-            LC_ALL = 'C'
-          }
-          steps {
-            script {
-              // Qt5 is MacOS 10.12+...
-              withEnv (["PATH=${env.MACPORTS}/bin:${env.PATH}:/usr/local/bin/", "QTDIR=${env.MACPORTS}/libexec/qt4"]) {
-                sh "echo PATH: \$PATH QTDIR: \$QTDIR"
-                sh "${env.GMAKE} --version"
-                common.buildOMC('cc', 'c++', "OMPCC='gcc-mp-5 -fopenmp -mno-avx' GNUCXX=g++-mp-5 FC=gfortran-mp-5 LDFLAGS=-L${env.MACPORTS}/lib CPPFLAGS=-I${env.MACPORTS}/include --without-omlibrary", true, false)
-                common.buildGUI('', false)
-                sh label: "All dylibs and their deps in build/", script: 'find build/ -name "*.dylib" -exec otool -L {} ";"'
-                sh label: "Look for relative paths in dylibs", script: '! ( find build/ -name "*.dylib" -exec otool -L {} ";" | tr -d "\t" | grep -v : | grep -v "^[/@]" )'
-                sh label: "All executables and therir deps in build/bin", script: 'find build/bin -type f -exec otool -L {} ";"'
-                sh label: "Look for relative paths in bin folder", script: '! ( find build/bin -type f -exec otool -L {} ";" | tr -d "\t" | grep -v : | grep -v "^[/@]" )'
-                // TODO: OMCppOSUSimulation throws error for help display
-                //sh label: "Sanity check for Cpp runtime", script: "./build/bin/OMCppOSUSimulation --help"
-                sh label: "Sanity check for OMEdit", script: "./build/Applications/OMEdit.app/Contents/MacOS/OMEdit --help"
-              }
-            }
           }
         }
         stage('Win/MinGW') {
@@ -151,68 +118,84 @@ pipeline {
             }
           }
         }
-        stage('CentOS7') {
+        stage('cmake-bionic-gcc') {
           agent {
             dockerfile {
               additionalBuildArgs '--pull'
-              dir '.CI/cache-centos7'
+              dir '.CI/cache-bionic-cmake-3.17.2'
               label 'linux'
-              args "-v /var/lib/jenkins/gitcache:/var/lib/jenkins/gitcache"
-            }
-          }
-          when {
-            beforeAgent true
-            expression { shouldWeBuildCENTOS7 }
-          }
-          environment {
-            QTDIR = "/usr/lib64/qt5/"
-          }
-          steps {
-            sh "source /opt/rh/devtoolset-8/enable"
-            script {
-              common.buildOMC(
-                '/opt/rh/devtoolset-8/root/usr/bin/gcc',
-                '/opt/rh/devtoolset-8/root/usr/bin/g++',
-                'FC=/opt/rh/devtoolset-8/root/usr/bin/gfortran CMAKE=cmake3',
-                false, // Building C++ runtime doesn't work at the moment
-                false)
-            }
-            //stash name: 'omc-centos7', includes: 'build/**, **/config.status'
-          }
-        }
-        stage('cmake-gcc') {
-          agent {
-            dockerfile {
-              additionalBuildArgs '--pull'
-              dir '.CI/cache-without-cmake'
-              label 'linux'
-              args "-v /var/lib/jenkins/gitcache:/var/lib/jenkins/gitcache"
               args "--mount type=volume,source=omlibrary-cache,target=/cache/omlibrary " +
                    "-v /var/lib/jenkins/gitcache:/var/lib/jenkins/gitcache"
             }
           }
           when {
             beforeAgent true
-            expression { !shouldWeSkipCMakeBuild_value }
-          }
-          environment {
-            CC = "gcc-5"
-            CXX = "g++-5"
+            expression { !shouldWeDisableAllCMakeBuilds_value }
           }
           steps {
             script {
-              echo "Download and install CMake 3.17.2"
-              sh '''
-                wget "cmake.org/files/v3.17/cmake-3.17.2-Linux-x86_64.sh"
-                mkdir -p /tmp/cmake
-                sh cmake-3.17.2-Linux-x86_64.sh --prefix=/tmp/cmake --skip-license
-                /tmp/cmake/bin/cmake --version
-              '''
-              common.buildOMC_CMake('-DCMAKE_BUILD_TYPE=Release -DOMC_USE_CCACHE=OFF -DCMAKE_INSTALL_PREFIX=build', '/tmp/cmake/bin/cmake')
-              sh "build/bin/omc --help"
+              echo "Running on: ${env.NODE_NAME}"
+              common.buildOMC_CMake("-DCMAKE_BUILD_TYPE=Release"
+                                        + " -DOM_USE_CCACHE=OFF"
+                                        + " -DCMAKE_INSTALL_PREFIX=build"
+                                    , "/opt/cmake-3.17.2/bin/cmake")
               sh "build/bin/omc --version"
             }
             // stash name: 'omc-cmake-gcc', includes: 'OMCompiler/build_cmake/install_cmake/bin/**'
+          }
+        }
+        stage('cmake-macos-arm64-gcc') {
+          agent {
+            node {
+              label 'M1'
+            }
+          }
+          when {
+            beforeAgent true
+            expression { !shouldWeDisableAllCMakeBuilds_value && shouldWeEnableMacOSCMakeBuild_value}
+          }
+          steps {
+            script {
+              echo "Running on: ${env.NODE_NAME}"
+              withEnv (["PATH=/opt/homebrew/bin:/opt/homebrew/opt/openjdk/bin:/usr/local/bin:${env.PATH}"]) {
+                sh "echo PATH: $PATH"
+                common.buildOMC_CMake("-DCMAKE_BUILD_TYPE=Release"
+                                          + " -DOM_USE_CCACHE=OFF"
+                                          + " -DCMAKE_INSTALL_PREFIX=build"
+                                          // Look in /opt/local first to prefer the macports libraries
+                                          // over others in the system.
+                                          + " -DCMAKE_PREFIX_PATH=/opt/local"
+                                          // Always specify the compilers explicilty for macOS
+                                          + " -DCMAKE_C_COMPILER=gcc"
+                                          + " -DCMAKE_CXX_COMPILER=g++"
+                                          + " -DCMAKE_Fortran_COMPILER=gfortran"
+                                      )
+                sh "build/bin/omc --version"
+              }
+            }
+          }
+        }
+        stage('cmake-OMDev-gcc') {
+          agent {
+            node {
+              label 'windows'
+            }
+          }
+          when {
+            beforeAgent true
+            expression { !shouldWeDisableAllCMakeBuilds_value && shouldWeEnableMinGWCMakeBuild_value}
+          }
+          steps {
+            script {
+              echo "Running on: ${env.NODE_NAME}"
+              withEnv (["PATH=C:\\OMDev\\tools\\msys\\usr\\bin;C:\\Program Files\\TortoiseSVN\\bin;c:\\bin\\jdk\\bin;c:\\bin\\nsis\\;${env.PATH};c:\\bin\\git\\bin;"]) {
+                bat "echo PATH: %PATH%"
+                common.buildOMC_CMake('-DCMAKE_BUILD_TYPE=Release'
+                                        + ' -DCMAKE_INSTALL_PREFIX=build'
+                                        + ' -G "MSYS Makefiles"'
+                                      )
+              }
+            }
           }
         }
         stage('checks') {
@@ -233,16 +216,49 @@ pipeline {
             sh "make -f Makefile.in -j${common.numLogicalCPU()} --output-sync=recurse bom-error utf8-error thumbsdb-error spellcheck"
             sh '''
             cd doc/bibliography
-            mkdir -p /tmp/openmodelica.org-bibgen
-            sh generate.sh /tmp/openmodelica.org-bibgen
+            mkdir -p openmodelica.org-bibgen
+            sh generate.sh "$PWD/openmodelica.org-bibgen"
             '''
+            stash name: 'bibliography', includes: 'doc/bibliography/openmodelica.org-bibgen/*.md'
           }
         }
       }
     }
     stage('tests') {
       parallel {
-        stage('testsuite-clang') {
+        stage('cross-build-fmu') {
+          agent {
+            label 'linux'
+          }
+          environment {
+            RUNTESTDB = "/cache/runtest/"
+            LIBRARIES = "/cache/omlibrary"
+          }
+          when {
+            beforeAgent true
+            expression { shouldWeRunTests }
+          }
+          steps {
+            script {
+              def deps = docker.build('testsuite-fmu-crosscompile', '--pull .CI/cache')
+              // deps.pull() // Already built...
+              def dockergid = sh (script: 'stat -c %g /var/run/docker.sock', returnStdout: true).trim()
+              deps.inside("-v /var/run/docker.sock:/var/run/docker.sock --group-add '${dockergid}' " +
+                          "--mount type=volume,source=omlibrary-cache,target=/cache/omlibrary") {
+                common.standardSetup()
+                unstash 'omc-clang'
+                common.makeLibsAndCache()
+                writeFile file: 'testsuite/special/FmuExportCrossCompile/VERSION', text: common.getVersion()
+                sh 'make -C testsuite/special/FmuExportCrossCompile/ dockerpull'
+                sh 'make -C testsuite/special/FmuExportCrossCompile/ test'
+                stash name: 'cross-fmu', includes: 'testsuite/special/FmuExportCrossCompile/*.fmu'
+                stash name: 'cross-fmu-extras', includes: 'testsuite/special/FmuExportCrossCompile/*.mos, testsuite/special/FmuExportCrossCompile/*.csv, testsuite/special/FmuExportCrossCompile/*.sh, testsuite/special/FmuExportCrossCompile/*.opt, testsuite/special/FmuExportCrossCompile/*.txt, testsuite/special/FmuExportCrossCompile/VERSION'
+                archiveArtifacts "testsuite/special/FmuExportCrossCompile/*.fmu"
+              }
+            }
+          }
+        }
+        stage('testsuite-clang 1/3') {
           agent {
             dockerfile {
               additionalBuildArgs '--pull'
@@ -272,12 +288,80 @@ pipeline {
               common.standardSetup()
               unstash 'omc-clang'
               common.makeLibsAndCache()
-              common.partest()
+              common.partest(1,3)
+            }
+          }
+        }
+        stage('testsuite-clang 2/3') {
+          agent {
+            dockerfile {
+              additionalBuildArgs '--pull'
+              dir '.CI/cache'
+              /* The cache Dockerfile makes /cache/runtest, etc world writable
+               * This is necessary because we run the docker image as a user and need to
+               * be able to have a global caching of the omlibrary parts and the runtest database.
+               * Note that the database is stored in a volume on a per-node basis, so the first time
+               * the tests run on a particular node, they might execute slightly slower
+               */
+              label 'linux'
+              args "--mount type=volume,source=runtest-clang-cache,target=/cache/runtest " +
+                   "--mount type=volume,source=omlibrary-cache,target=/cache/omlibrary " +
+                   "-v /var/lib/jenkins/gitcache:/var/lib/jenkins/gitcache"
+            }
+          }
+          environment {
+            RUNTESTDB = "/cache/runtest/"
+            LIBRARIES = "/cache/omlibrary"
+          }
+          when {
+            beforeAgent true
+            expression { shouldWeRunTests }
+          }
+          steps {
+            script {
+              common.standardSetup()
+              unstash 'omc-clang'
+              common.makeLibsAndCache()
+              common.partest(2,3)
+            }
+          }
+        }
+        stage('testsuite-clang 3/3') {
+          agent {
+            dockerfile {
+              additionalBuildArgs '--pull'
+              dir '.CI/cache'
+              /* The cache Dockerfile makes /cache/runtest, etc world writable
+               * This is necessary because we run the docker image as a user and need to
+               * be able to have a global caching of the omlibrary parts and the runtest database.
+               * Note that the database is stored in a volume on a per-node basis, so the first time
+               * the tests run on a particular node, they might execute slightly slower
+               */
+              label 'linux'
+              args "--mount type=volume,source=runtest-clang-cache,target=/cache/runtest " +
+                   "--mount type=volume,source=omlibrary-cache,target=/cache/omlibrary " +
+                   "-v /var/lib/jenkins/gitcache:/var/lib/jenkins/gitcache"
+            }
+          }
+          environment {
+            RUNTESTDB = "/cache/runtest/"
+            LIBRARIES = "/cache/omlibrary"
+          }
+          when {
+            beforeAgent true
+            expression { shouldWeRunTests }
+          }
+          steps {
+            script {
+              common.standardSetup()
+              unstash 'omc-clang'
+              common.makeLibsAndCache()
+              common.partest(3,3)
             }
           }
         }
 
-        stage('testsuite-gcc') {
+        stage('testsuite-gcc 1/3') {
           agent {
             dockerfile {
               additionalBuildArgs '--pull'
@@ -301,43 +385,63 @@ pipeline {
               common.standardSetup()
               unstash 'omc-gcc'
               common.makeLibsAndCache()
-              common.partest()
+              common.partest(1,3)
             }
           }
         }
-
-        stage('testsuite-fmu-crosscompile') {
-          stages {
-            stage('cross-build-fmu') {
-              agent {
-                label 'linux'
-              }
-              environment {
-                RUNTESTDB = "/cache/runtest/"
-                LIBRARIES = "/cache/omlibrary"
-              }
-              when {
-                beforeAgent true
-                expression { shouldWeRunTests }
-              }
-              steps {
-                script {
-                  def deps = docker.build('testsuite-fmu-crosscompile', '--pull .CI/cache')
-                  // deps.pull() // Already built...
-                  def dockergid = sh (script: 'stat -c %g /var/run/docker.sock', returnStdout: true).trim()
-                  deps.inside("-v /var/run/docker.sock:/var/run/docker.sock --group-add '${dockergid}'") {
-                    common.standardSetup()
-                    unstash 'omc-clang'
-                    common.makeLibsAndCache()
-                    writeFile file: 'testsuite/special/FmuExportCrossCompile/VERSION', text: common.getVersion()
-                    sh 'make -C testsuite/special/FmuExportCrossCompile/ dockerpull'
-                    sh 'make -C testsuite/special/FmuExportCrossCompile/ test'
-                    stash name: 'cross-fmu', includes: 'testsuite/special/FmuExportCrossCompile/*.fmu'
-                    stash name: 'cross-fmu-extras', includes: 'testsuite/special/FmuExportCrossCompile/*.mos, testsuite/special/FmuExportCrossCompile/*.csv, testsuite/special/FmuExportCrossCompile/*.sh, testsuite/special/FmuExportCrossCompile/*.opt, testsuite/special/FmuExportCrossCompile/*.txt, testsuite/special/FmuExportCrossCompile/VERSION'
-                    archiveArtifacts "testsuite/special/FmuExportCrossCompile/*.fmu"
-                  }
-                }
-              }
+        stage('testsuite-gcc 2/3') {
+          agent {
+            dockerfile {
+              additionalBuildArgs '--pull'
+              dir '.CI/cache-xenial'
+              label 'linux'
+              args "--mount type=volume,source=runtest-gcc-cache,target=/cache/runtest " +
+                   "--mount type=volume,source=omlibrary-cache,target=/cache/omlibrary " +
+                   "-v /var/lib/jenkins/gitcache:/var/lib/jenkins/gitcache"
+            }
+          }
+          environment {
+            RUNTESTDB = "/cache/runtest/"
+            LIBRARIES = "/cache/omlibrary"
+          }
+          when {
+            beforeAgent true
+            expression { shouldWeRunTests }
+          }
+          steps {
+            script {
+              common.standardSetup()
+              unstash 'omc-gcc'
+              common.makeLibsAndCache()
+              common.partest(2,3)
+            }
+          }
+        }
+        stage('testsuite-gcc 3/3') {
+          agent {
+            dockerfile {
+              additionalBuildArgs '--pull'
+              dir '.CI/cache-xenial'
+              label 'linux'
+              args "--mount type=volume,source=runtest-gcc-cache,target=/cache/runtest " +
+                   "--mount type=volume,source=omlibrary-cache,target=/cache/omlibrary " +
+                   "-v /var/lib/jenkins/gitcache:/var/lib/jenkins/gitcache"
+            }
+          }
+          environment {
+            RUNTESTDB = "/cache/runtest/"
+            LIBRARIES = "/cache/omlibrary"
+          }
+          when {
+            beforeAgent true
+            expression { shouldWeRunTests }
+          }
+          steps {
+            script {
+              common.standardSetup()
+              unstash 'omc-gcc'
+              common.makeLibsAndCache()
+              common.partest(3,3)
             }
           }
         }
@@ -372,43 +476,13 @@ pipeline {
           }
         }
 
-        stage('testsuite-compliance-newinst') {
-          agent {
-            dockerfile {
-              additionalBuildArgs '--pull'
-              dir '.CI/cache'
-              /* The cache Dockerfile makes /cache/runtest, etc world writable
-               * This is necessary because we run the docker image as a user and need to
-               * be able to have a global caching of the omlibrary parts and the runtest database.
-               * Note that the database is stored in a volume on a per-node basis, so the first time
-               * the tests run on a particular node, they might execute slightly slower
-               */
-              label 'linux'
-              args "--mount type=volume,source=omlibrary-cache,target=/cache/omlibrary " +
-                   "-v /var/lib/jenkins/gitcache:/var/lib/jenkins/gitcache"
-            }
-          }
-          environment {
-            LIBRARIES = "/cache/omlibrary"
-            COMPLIANCEEXTRAFLAGS = "-d=newInst"
-            COMPLIANCEEXTRAREPORTFLAGS = "--expectedFailures=.CI/compliance-newinst.failures"
-            COMPLIANCEPREFIX = "compliance-newinst"
-          }
-          when {
-            beforeAgent true
-            expression { shouldWeRunTests }
-          }
-          steps {
-            script { common.compliance() }
-          }
-        }
-
         stage('build-gui-clang-qt5') {
           agent {
             docker {
               image 'docker.openmodelica.org/build-deps:v1.16.3'
               label 'linux'
               alwaysPull true
+              args "--mount type=volume,source=omlibrary-cache,target=/cache/omlibrary"
             }
           }
           steps {
@@ -432,6 +506,7 @@ pipeline {
           environment {
             RUNTESTDB = "/cache/runtest/" // Dummy directory
             LIBRARIES = "/cache/omlibrary"
+            GITHUB_AUTH = credentials('OpenModelica-Hudson')
           }
           steps {
             script {
@@ -442,7 +517,7 @@ pipeline {
             sh '''
             export OPENMODELICAHOME=$PWD/build
             test ! -d $PWD/build/lib/omlibrary
-            cp -a testsuite/libraries-for-testing/.openmodelica/libraries $PWD/build/lib/omlibrary
+            cp -a libraries/.openmodelica/libraries $PWD/build/lib/omlibrary
             for target in html pdf epub; do
               if ! make -C doc/UsersGuide $target; then
                 killall omc || true
@@ -475,7 +550,7 @@ pipeline {
             script {
               common.standardSetup()
               unstash 'omc-clang'
-              common.partest(false, '-j1 -parmodexp')
+              common.partest(1, 1, false, '-j1 -parmodexp')
             }
           }
         }
@@ -550,23 +625,7 @@ pipeline {
 
       }
     }
-    stage('OMEdit testsuite') {
-      parallel {
-        stage('clang-qt5') {
-          agent {
-            docker {
-              image 'docker.openmodelica.org/build-deps:v1.16.3'
-              label 'linux'
-              alwaysPull true
-            }
-          }
-          steps {
-            script { common.buildAndRunOMEditTestsuite('omedit-testsuite-clang') }
-          }
-        }
-      }
-    }
-    stage('fmuchecker') {
+    stage('fmuchecker + OMEdit testsuite') {
       parallel {
         stage('linux-wine-fmuchecker') {
           agent {
@@ -647,6 +706,25 @@ pipeline {
             stash name: 'cross-fmu-results-armhf', includes: 'testsuite/special/FmuExportCrossCompile/*.csv, testsuite/special/FmuExportCrossCompile/Test_FMUs/**'
           }
         }
+        stage('clang-qt5-omedit-testsuite') {
+          agent {
+            docker {
+              image 'docker.openmodelica.org/build-deps:v1.16.3'
+              label 'linux'
+              alwaysPull true
+              args "--mount type=volume,source=omlibrary-cache,target=/cache/omlibrary"
+            }
+          }
+          environment {
+            RUNTESTDB = "/cache/runtest/"
+            LIBRARIES = "/cache/omlibrary"
+          }
+          steps {
+            script {
+              common.buildAndRunOMEditTestsuite('omedit-testsuite-clang')
+            }
+          }
+        }
       }
     }
     stage('check-and-upload') {
@@ -664,15 +742,16 @@ pipeline {
             expression { shouldWeRunTests }
           }
           options {
-            skipDefaultCheckout true
+            skipDefaultCheckout true // This seems to cause problems for symbolic links
           }
           steps {
+            echo "${env.NODE_NAME}"
+            sh 'rm -rf build/ testsuite/'
             unstash 'omc-clang'
             unstash 'cross-fmu-extras'
             unstash 'cross-fmu-results-linux-wine'
             unstash 'cross-fmu-results-osx'
             unstash 'cross-fmu-results-armhf'
-            echo "${env.NODE_NAME}"
             sh 'cd testsuite/special/FmuExportCrossCompile && ../../../build/bin/omc check-files.mos'
             sh 'cd testsuite/special/FmuExportCrossCompile && tar -czf ../../../Test_FMUs.tar.gz Test_FMUs'
             archiveArtifacts 'Test_FMUs.tar.gz'
@@ -692,7 +771,6 @@ pipeline {
           }
           steps {
             unstash 'compliance'
-            unstash 'compliance-newinst'
             echo "${env.NODE_NAME}"
             sshPublisher(publishers: [sshPublisherDesc(configName: 'ModelicaComplianceReports', transfers: [sshTransfer(sourceFiles: 'compliance-*html')])])
           }
@@ -719,21 +797,59 @@ pipeline {
         }
       }
     }
-    stage('push-to-master') {
-      agent {
-        label 'linux'
-      }
-      when {
-        beforeAgent true
-        branch 'omlib-staging'
-        expression { return currentBuild.currentResult == 'SUCCESS' }
-      }
-      steps {
-        githubNotify status: 'SUCCESS', description: 'The staged library changes are working', context: 'continuous-integration/jenkins/pr-merge'
-        githubNotify status: 'SUCCESS', description: 'Skipping CLA checks on omlib-staging', context: 'license/CLA'
-        sshagent (credentials: ['Hudson-SSH-Key']) {
-          sh 'ssh-keyscan github.com >> ~/.ssh/known_hosts'
-          sh 'git push git@github.com:OpenModelica/OpenModelica.git omlib-staging:master || (echo "Trying to update the repository if that is the problem" ; git pull --rebase && git push --force  git@github.com:OpenModelica/OpenModelica.git omlib-staging:omlib-staging & false)'
+    stage('publish') {
+      parallel {
+        stage('push-to-master') {
+          agent {
+            label 'linux'
+          }
+          when {
+            beforeAgent true
+            branch 'omlib-staging'
+            expression { return currentBuild.currentResult == 'SUCCESS' }
+          }
+          steps {
+            script { common.standardSetup() }
+            githubNotify status: 'SUCCESS', description: 'The staged library changes are working', context: 'continuous-integration/jenkins/pr-merge'
+            githubNotify status: 'SUCCESS', description: 'Skipping CLA checks on omlib-staging', context: 'license/CLA'
+            sshagent (credentials: ['Hudson-SSH-Key']) {
+              sh 'ssh-keyscan github.com >> ~/.ssh/known_hosts'
+              sh 'git push git@github.com:OpenModelica/OpenModelica.git omlib-staging:master || (echo "Trying to update the repository if that is the problem" ; git pull --rebase && git push --force  git@github.com:OpenModelica/OpenModelica.git omlib-staging:omlib-staging && false)'
+            }
+          }
+        }
+        stage('push-bibliography') {
+          agent {
+            node {
+              label 'linux'
+              customWorkspace 'ws/OpenModelica-Bibliography'
+            }
+          }
+          when {
+            beforeAgent true
+            branch 'master'
+            expression { return currentBuild.currentResult == 'SUCCESS' }
+          }
+          options {
+            skipDefaultCheckout true
+          }
+          steps {
+            git branch: 'main', credentialsId: 'Hudson-SSH-Key', url: 'git@github.com:OpenModelica/www.openmodelica.org.git'
+            script { common.standardSetup() }
+            unstash 'bibliography' // 'doc/bibliography/openmodelica.org-bibgen'
+            sh "git remote -v | grep www.openmodelica.org"
+            sh "mv doc/bibliography/openmodelica.org-bibgen/*.md content/research/"
+            sh "git add content/research/*.md"
+            sshagent (credentials: ['Hudson-SSH-Key']) {
+              sh """
+              if ! git diff-index --quiet HEAD; then
+                git commit -m 'Updated bibliography'
+                ssh-keyscan github.com >> ~/.ssh/known_hosts
+                git push --set-upstream origin main
+              fi
+              """
+            }
+          }
         }
       }
     }

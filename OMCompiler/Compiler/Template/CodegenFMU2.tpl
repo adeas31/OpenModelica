@@ -140,14 +140,14 @@ case SIMCODE(__) then
     modelIdentifier="<%Util.escapeModelicaStringToXmlString(modelIdentifier)%>"
     needsExecutionTool="false"
     canHandleVariableCommunicationStepSize="true"
-    canInterpolateInputs="false"
+    canInterpolateInputs="true"
     maxOutputDerivativeOrder="1"
     canRunAsynchronuously = "false"
     canBeInstantiatedOnlyOncePerProcess="false"
     canNotUseMemoryManagementFunctions="false"
-    canGetAndSetFMUstate="false"
-    canSerializeFMUstate="false"
-    <% if Flags.isSet(FMU_EXPERIMENTAL) then 'providesDirectionalDerivative="true"'%>>
+    <% if Flags.isSet(FMU_EXPERIMENTAL) then 'canGetAndSetFMUstate="true"' else 'canGetAndSetFMUstate="false"'%>
+    <% if Flags.isSet(FMU_EXPERIMENTAL) then 'canSerializeFMUstate="true"' else 'canSerializeFMUstate="false"'%>
+    <% if Flags.isSet(FMU_EXPERIMENTAL) then 'providesDirectionalDerivative="true"' else 'providesDirectionalDerivative="false"'%>>
     <%SourceFiles(sourceFiles)%>
   </CoSimulation>
   >>

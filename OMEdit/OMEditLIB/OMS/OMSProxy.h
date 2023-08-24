@@ -73,11 +73,13 @@ public:
   void emitLogGUIMessage(MessageItem messageItem) {emit logGUIMessage(messageItem);}
 
   bool addBus(QString cref);
-  bool addConnection(QString crefA, QString crefB);
+  bool addConnection(QString crefA, QString crefB, bool suppressUnitConversion = false);
   bool addConnector(QString cref, oms_causality_enu_t causality, oms_signal_type_enu_t type);
   bool addConnectorToBus(QString busCref, QString connectorCref);
   bool addConnectorToTLMBus(QString busCref, QString connectorCref, QString type);
   bool addSubModel(QString cref, QString fmuPath);
+  bool replaceSubModel(QString cref, QString fmuPath, bool dryCount, int* count);
+  void createElementGeometryUsingPosition(const QString &cref, QPointF position);
   bool addExternalTLMModel(QString cref, QString startScript, QString modelPath);
   bool addSystem(QString cref, oms_system_enu_t type);
   bool addTLMBus(QString cref, oms_tlm_domain_t domain, int dimensions, const oms_tlm_interpolation_t interpolation);

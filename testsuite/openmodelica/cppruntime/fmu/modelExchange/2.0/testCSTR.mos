@@ -19,7 +19,7 @@ getErrorString();
 // enable directional derivatives
 setCommandLineOptions("-d=-disableDirectionalDerivatives"); getErrorString();
 
-translateModelFMU(CSTRModel, version="2.0"); getErrorString();
+buildModelFMU(CSTRModel, version="2.0"); getErrorString();
 
 // unzip to console, quiet, extra quiet
 system("unzip -cqq CSTRModel.fmu modelDescription.xml | grep -v guid | grep -v generationDateAndTime | grep -v generationTool > modelDescription.tmp.xml");
@@ -47,9 +47,9 @@ getErrorString();
 // true
 // ""
 // true
-// "Notification: Automatically loaded package Modelica 3.2.2 due to uses annotation.
-// Notification: Automatically loaded package Complex 3.2.2 due to uses annotation.
-// Notification: Automatically loaded package ModelicaServices 3.2.2 due to uses annotation.
+// "Notification: Automatically loaded package Modelica 3.2.2 due to uses annotation from CSTR.
+// Notification: Automatically loaded package Complex 3.2.2 due to uses annotation from Modelica.
+// Notification: Automatically loaded package ModelicaServices 3.2.2 due to uses annotation from Modelica.
 // "
 // true
 // ""

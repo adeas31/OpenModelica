@@ -40,8 +40,11 @@
 #define EXPANDSTRING(s) EXPANDSTRINGHELPER(s)
 #define EXPANDSTRINGHELPER(s) #s
 
-#define DEFAULT_FLAG_LSS_MIN_SIZE 201
-#define DEFAULT_FLAG_NLS_MIN_SIZE 10001
+#define DEFAULT_FLAG_LSS_MAX_DENSITY 0.2
+#define DEFAULT_FLAG_LSS_MIN_SIZE 1000
+#define DEFAULT_FLAG_NLSS_MAX_DENSITY 0.1
+#define DEFAULT_FLAG_NLSS_MIN_SIZE 1000
+#define DEFAULT_FLAG_LV_MAX_WARN 3          /* Default value for flag FLAG_LV_MAX_WARN */
 
 enum _FLAG
 {
@@ -97,7 +100,6 @@ enum _FLAG
   FLAG_IMPRK_LS,
   FLAG_INITIAL_STEP_SIZE,
   FLAG_INPUT_CSV,
-  FLAG_INPUT_FILE,
   FLAG_INPUT_FILE_STATES,
   FLAG_INPUT_PATH,
   FLAG_IPOPT_HESSE,
@@ -116,12 +118,14 @@ enum _FLAG
   FLAG_LSS_MAX_DENSITY,
   FLAG_LSS_MIN_SIZE,
   FLAG_LV,
+  FLAG_LV_MAX_WARN,
   FLAG_LV_TIME,
   FLAG_MAX_BISECTION_ITERATIONS,
   FLAG_MAX_EVENT_ITERATIONS,
   FLAG_MAX_ORDER,
   FLAG_MAX_STEP_SIZE,
   FLAG_MEASURETIMEPLOTFORMAT,
+  FLAG_NEWTON_DIAGNOSTICS,
   FLAG_NEWTON_FTOL,
   FLAG_NEWTON_MAX_STEP_FACTOR,
   FLAG_NEWTON_XTOL,
@@ -129,8 +133,8 @@ enum _FLAG
   FLAG_NLS,
   FLAG_NLS_INFO,
   FLAG_NLS_LS,
-  FLAG_NLS_MAX_DENSITY,
-  FLAG_NLS_MIN_SIZE,
+  FLAG_NLSS_MAX_DENSITY,
+  FLAG_NLSS_MIN_SIZE,
   FLAG_NOEMIT,
   FLAG_NOEQUIDISTANT_GRID,
   FLAG_NOEQUIDISTANT_OUT_FREQ,
@@ -151,6 +155,18 @@ enum _FLAG
   FLAG_R,
   FLAG_DATA_RECONCILE,
   FLAG_DATA_RECONCILE_BOUNDARY,
+  FLAG_DATA_RECONCILE_STATE,
+  FLAG_SR,
+  FLAG_SR_CTRL,
+  FLAG_SR_ERR,
+  FLAG_SR_INT,
+  FLAG_SR_NLS,
+  FLAG_MR,
+  FLAG_MR_CTRL,
+  FLAG_MR_ERR,
+  FLAG_MR_INT,
+  FLAG_MR_NLS,
+  FLAG_MR_PAR,
   FLAG_RT,
   FLAG_S,
   FLAG_SINGLE_PRECISION,
@@ -160,6 +176,7 @@ enum _FLAG
   FLAG_DATA_RECONCILE_Sx,
   FLAG_UP_HESSIAN,
   FLAG_W,
+  FLAG_PARMODNUMTHREADS,
 
   FLAG_MAX
 };
@@ -187,6 +204,105 @@ extern const char *FLAG_DETAILED_DESC[FLAG_MAX+1];
 extern const flag_repeat_policy FLAG_REPEAT_POLICIES[FLAG_MAX];
 extern const int FLAG_TYPE[FLAG_MAX];
 
+enum GB_METHOD {
+  GB_UNKNOWN = 0,
+
+  MS_ADAMS_MOULTON,   /* adams*/
+  RK_EXPL_EULER,      /* expl_euler*/
+  RK_IMPL_EULER,      /* impl_euler*/
+  RK_TRAPEZOID,       /* trapezoid */
+  RK_SDIRK2,          /* sdirk2*/
+  RK_SDIRK3,          /* sdirk3*/
+  RK_ESDIRK2,         /* esdirk2*/
+  RK_ESDIRK3,         /* esdirk3*/
+  RK_ESDIRK4,         /* esdirk4*/
+  RK_RADAU_IA_2,      /* radauIA2*/
+  RK_RADAU_IA_3,      /* radauIA3*/
+  RK_RADAU_IA_4,      /* radauIA4*/
+  RK_RADAU_IIA_2,     /* radauIIA2*/
+  RK_RADAU_IIA_3,     /* radauIIA3*/
+  RK_RADAU_IIA_4,     /* radauIIA4*/
+  RK_LOBA_IIIA_3,     /* lobattoIIIA3*/
+  RK_LOBA_IIIA_4,     /* lobattoIIIA4*/
+  RK_LOBA_IIIB_3,     /* lobattoIIIB3*/
+  RK_LOBA_IIIB_4,     /* lobattoIIIB4*/
+  RK_LOBA_IIIC_3,     /* lobattoIIIC3*/
+  RK_LOBA_IIIC_4,     /* lobattoIIIC4*/
+  RK_GAUSS2,          /* gauss2*/
+  RK_GAUSS3,          /* gauss3*/
+  RK_GAUSS4,          /* gauss4*/
+  RK_GAUSS5,          /* gauss5*/
+  RK_GAUSS6,          /* gauss6*/
+  RK_MERSON,          /* merson*/
+  RK_MERSONSSC1,      /* mersonSsc1*/
+  RK_MERSONSSC2,      /* mersonSsc2*/
+  RK_HEUN,            /* heun */
+  RK_FEHLBERG12,      /* fehlberg12*/
+  RK_FEHLBERG45,      /* fehlberg45*/
+  RK_FEHLBERG78,      /* fehlberg78*/
+  RK_FEHLBERGSSC1,    /* fehlbergSsc1*/
+  RK_FEHLBERGSSC2,    /* fehlbergSsc2*/
+  RK_RK810,           /* rk810*/
+  RK_RK1012,          /* rk1012*/
+  RK_RK1214,          /* rk1214*/
+  RK_DOPRI45,         /* dopri45*/
+  RK_DOPRISSC1,       /* dopriSsc1*/
+  RK_DOPRISSC2,       /* dopriSsc2*/
+  RK_TSIT5,           /* tsit5*/
+  RK_RUNGEKUTTA,      /* rungekutta*/
+  RK_RKSSC,           /* rungekuttaSsc */
+
+
+  RK_MAX
+};
+
+extern const char *GB_METHOD_NAME[RK_MAX];
+extern const char *GB_METHOD_DESC[RK_MAX];
+
+enum GB_NLS_METHOD {
+  GB_NLS_UNKNOWN = 0,
+
+  GB_NLS_NEWTON,
+  GB_NLS_KINSOL,
+
+  GB_NLS_MAX
+};
+
+extern const char *GB_NLS_METHOD_NAME[GB_NLS_MAX];
+extern const char *GB_NLS_METHOD_DESC[GB_NLS_MAX];
+
+/**
+ * @brief Step size controller method
+ */
+enum GB_CTRL_METHOD {
+  GB_CTRL_UNKNOWN = 0,  /* Unknown controller */
+  GB_CTRL_I = 1,        /* I controller */
+  GB_CTRL_PI = 2,       /* PI controller */
+  GB_CTRL_PID = 3,       /* PID controller */
+  GB_CTRL_CNST = 4,     /* Constant step size */
+
+  GB_CTRL_MAX
+};
+
+extern const char *GB_CTRL_METHOD_NAME[GB_CTRL_MAX];
+extern const char *GB_CTRL_METHOD_DESC[GB_CTRL_MAX];
+
+enum GB_INTERPOL_METHOD {
+  GB_INTERPOL_UNKNOWN = 0,      /* Unknown interpolation method */
+  GB_INTERPOL_LIN,              /* Linear interpolation */
+  GB_INTERPOL_HERMITE,          /* Hermite interpolation */
+  GB_INTERPOL_HERMITE_a,        /* Hermite interpolation (only for left hand side)*/
+  GB_INTERPOL_HERMITE_b,        /* Hermite interpolation (only for right hand side)*/
+  GB_INTERPOL_HERMITE_ERRCTRL,  /* Hermite interpolation with error control */
+  GB_DENSE_OUTPUT,              /* Dense output, if available else hermite */
+  GB_DENSE_OUTPUT_ERRCTRL,      /* Dense output, if available else hermite with error control */
+
+  GB_INTERPOL_MAX
+};
+
+extern const char *GB_INTERPOL_METHOD_NAME[GB_INTERPOL_MAX];
+extern const char *GB_INTERPOL_METHOD_DESC[GB_INTERPOL_MAX];
+
 enum SOLVER_METHOD
 {
   S_UNKNOWN = 0,
@@ -197,6 +313,7 @@ enum SOLVER_METHOD
   S_IMPEULER,
   S_TRAPEZOID,
   S_IMPRUNGEKUTTA,
+  S_GBODE,
   S_IRKSCO,
   S_DASSL,
   S_IDA,

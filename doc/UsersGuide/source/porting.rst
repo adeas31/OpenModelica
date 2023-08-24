@@ -1,8 +1,8 @@
 Porting Modelica libraries to OpenModelica
-===========
+==========================================
 
 One of the goals of OpenModelica is to provide a full, no-compromise implementation
-of the latest version of the 
+of the latest version of the
 `Modelica Language Specification <https://specification.modelica.org>`_,
 released by the non-profit `Modelica Association <https://www.modelica.org>`_.
 This means that a main requirement for a Modelica library to work in
@@ -27,7 +27,7 @@ non-standard constructs are used.
 For your convenience, here you can find a list of commonly reported issues.
 
 Mapping of the library on the file system
--------
+-----------------------------------------
 
 Packages can be mapped onto individual *.mo* files or onto hierarchical
 directory structures on the file system, according to the rules set forth in
@@ -53,8 +53,9 @@ package, should be named exactly as the package (e.g. *Modelica*),
 possibly followed by a space and by the version number (e.g. *Modelica 3.2.3*).
 
 Modifiers for arrays
--------
-According to the rules set forth in `Section 7.2.5 <https://specification.modelica.org/maint/3.5/inheritance-modification-and-redeclaration.html#modifiers-for-array-elements>`_ 
+--------------------
+
+According to the rules set forth in `Section 7.2.5 <https://specification.modelica.org/maint/3.5/inheritance-modification-and-redeclaration.html#modifiers-for-array-elements>`_
 of the language specification, when instantiating arrays of components, modifier
 values should be arrays of the same size of the component array, unless the *each*
 prefix is introduced, in which case the scalar modifier values is applied to
@@ -80,7 +81,8 @@ In most cases, the problem is solved by simply adding the *each* keyword where
 appropriate.
 
 Access to conditional components
--------
+--------------------------------
+
 According to `Section 4.4.5 <https://specification.modelica.org/maint/3.5/class-predefined-types-and-declarations.html#conditional-component-declaration>`_
 of the language specification, "A component declared with a condition-attribute
 can only be modified and/or used in connections". When dealing, e.g., with
@@ -109,7 +111,7 @@ conditional input connectors, one can use the following patterns:
   end M;
 
 where conditional components are only used in connect equations. The following
-patterns instead are not legal: 
+patterns instead are not legal:
 
 .. code-block:: modelica
 
@@ -137,7 +139,8 @@ when the corresponding conditional components are also not activated is
 irrelevant, according to the language specification.
 
 Access to classes defined in partial packages
--------
+---------------------------------------------
+
 Consider the following example package
 
 .. code-block:: modelica
@@ -202,7 +205,8 @@ in the simulation model.
 
 
 Equality operator in algorithms
--------
+-------------------------------
+
 The following code is illegal, because it uses the equality '=' operator, which
 is reserved for equations, instead of the assignment operator ':=' inside
 an algorithm:
@@ -236,10 +240,11 @@ Also note that binding *equations* with '=' sign are instead required for
 default values of function inputs.
 
 Public non-input non-output variables in functions
-------
+--------------------------------------------------
+
 According to `Section 12.2 <https://specification.modelica.org/maint/3.5/functions.html#function-as-a-specialized-class>`_
 of the language specification, only input and output formal parameters are
-allowed in the function’s public variable section. Hence, the following function
+allowed in the function's public variable section. Hence, the following function
 declaration is not valid:
 
 .. code-block:: modelica
@@ -248,7 +253,7 @@ declaration is not valid:
     input Real x;
     output Real y;
     Real z;
-  algorithm 
+  algorithm
     z := 2;
     y := x+z;
   end f;
@@ -262,13 +267,14 @@ and should be fixed by putting the variable *z* in the protected section:
     output Real y;
   protected
     Real z;
-  algorithm 
+  algorithm
     z := 2;
     y := x+z;
   end f;
 
 Subscripting of expressions
-------
+---------------------------
+
 There is a proposal of allowing expression subscripting, e.g.
 
 .. code-block:: modelica
@@ -287,7 +293,8 @@ included in the current Modelica specification 3.5, nor even in the current work
 draft of 3.6, so it is not currently supported by OpenModelica.
 
 Incomplete specification of initial conditions
-------
+----------------------------------------------
+
 The simulation of Modelica models of dynamical systems requires the tool to
 determine a consistent initial solution for the simulation to start. To do so,
 the system equations are augmented by adding one initial condition for each
@@ -351,7 +358,7 @@ for example the following model:
     z = 10*x + 1;
   end M;
 
-This model has one state variable *x*, no variables with *fixed = true* 
+This model has one state variable *x*, no variables with *fixed = true*
 attributes and no initial equation, so there is one missing initial condition.
 One tool could choose to add the *fixed = true* attribute to the state variable
 *x*, fixing it to the default value of zero of its *start* attribute. Or, it
@@ -379,7 +386,8 @@ recommend to amend the source code of the model by adding suitable extra initial
 conditions, until that warning message no longer appears.
 
 Modelica_LinearSystems2 Library
-------
+-------------------------------
+
 The Modelica_LinearSystem2 library was originally developed in Dymola
 with a plan of eventually making it part of the Modelica Standard Library
 (thus the underscore in the library name). The library is based on several

@@ -110,7 +110,7 @@ algorithm
         (varSize, eqnSize, eqns, hs) = inArg;
         b = DAEUtil.isInput(element) and DAEUtil.isPublicVar(element);
         ce = Expression.crefExp(cr);
-        size = if b then 0 else 1;
+        size = if b then 0 else Expression.sizeOf(element.ty);
         eqns = List.consOnTrue(not b, DAE.EQUATION(ce, e, source), eqns);
         hs = if not b then BaseHashSet.add(cr, hs) else hs;
       then (varSize+size, eqnSize+size, eqns, hs);
@@ -121,7 +121,7 @@ algorithm
         (varSize, eqnSize, eqns, hs) = inArg;
         b = DAEUtil.isInput(element) and DAEUtil.isPublicVar(element);
         ce = Expression.crefExp(cr);
-        size = if b then 0 else 1;
+        size = if b then 0 else Expression.sizeOf(element.ty);
         eqns = List.consOnTrue(not b, DAE.EQUATION(ce, e, source), eqns);
         hs = if not b then BaseHashSet.add(cr, hs) else hs;
       then (varSize+size, eqnSize+size, eqns, hs);
@@ -131,7 +131,7 @@ algorithm
       equation
         (varSize, eqnSize, eqns, hs) = inArg;
         b = DAEUtil.isInput(element) and DAEUtil.isPublicVar(element);
-        size = if b then 0 else 1;
+        size = if b then 0 else Expression.sizeOf(element.ty);
         hs = if not b then BaseHashSet.add(cr, hs) else hs;
       then (varSize+size, eqnSize, eqns, hs);
 
@@ -140,7 +140,7 @@ algorithm
       equation
         (varSize, eqnSize, eqns, hs) = inArg;
         b = DAEUtil.isInput(element) and DAEUtil.isPublicVar(element);
-        size = if b then 0 else 1;
+        size = if b then 0 else Expression.sizeOf(element.ty);
         hs = if not b then BaseHashSet.add(cr, hs) else hs;
       then (varSize+size, eqnSize, eqns, hs);
 
@@ -208,13 +208,25 @@ algorithm
         (_, size, _, _) = List.fold(daeElts, countVarEqnSize, (0, 0, {}, hs));
       then (varSize, eqnSize+size, eqns, hs);
 
+    case DAE.INITIAL_FOR_EQUATION()
+      equation
+        (varSize, eqnSize, eqns, hs) = inArg;
+        (_, size, _, _) = List.fold(element.equations, countVarEqnSize, (0, 0, {}, hs));
+        size = size * Expression.sizeOf(Expression.typeof(element.range));
+      then
+        (varSize, eqnSize+size, eqns, hs);
+
+    case DAE.FOR_EQUATION()
+      equation
+        (varSize, eqnSize, eqns, hs) = inArg;
+        (_, size, _, _) = List.fold(element.equations, countVarEqnSize, (0, 0, {}, hs));
+        size = size * Expression.sizeOf(Expression.typeof(element.range));
+      then
+        (varSize, eqnSize+size, eqns, hs);
+
     // if equation with condition false and no else
     case DAE.IF_EQUATION(condition1 = {DAE.BCONST(false)}, equations3 = {})
        then inArg;
-
-    // if equation that cannot be translated to if expression but have initial() as condition
-    case DAE.IF_EQUATION(condition1 = {DAE.CALL(path=Absyn.IDENT("initial"))})
-      then inArg;
 
     // if equation
     case DAE.IF_EQUATION(equations2 = daeElts::_)
@@ -321,7 +333,7 @@ algorithm
     // the algorithm came from a component that is member of an array or not
     case (_, DAE.SOURCE(), _)
       then
-        if PrefixUtil.haveSubs(inSource.instance)
+        if PrefixUtil.hasSubs(inSource.instance)
         then algorithmOutputs(inAlgorithm, DAE.NOT_EXPAND())
         else algorithmOutputs(inAlgorithm, inCrefExpansionRule);
 

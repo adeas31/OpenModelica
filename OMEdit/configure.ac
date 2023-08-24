@@ -120,7 +120,7 @@ if test "$WITH_OSG" = 0; then
   AC_MSG_RESULT("Disabled OSG")
 else
   QMAKE_CONFIG_OSG="CONFIG += osg"
-  LIBOSG="-losg -losgViewer -losgDB -losgGA -lOpenThreads"
+  LIBOSG="-losg -losgViewer -losgUtil -losgDB -losgGA -lOpenThreads -lGL"
   AC_MSG_RESULT("OSG is enabled")
 fi
 
@@ -172,4 +172,4 @@ fi
 m4_include([common/m4/semver.m4])
 SOURCE_REVISION="$SOURCE_REVISION$NON_FREE_VERSION"
 
-AC_OUTPUT(Makefile.unix omc_config.h OMEditLIB/OMEditLIB.unix.config.pri OMEditLIB/Debugger/Parser/Makefile.unix OMEditLIB/Debugger/Parser/Makefile.lib.unix OMEditGUI/OMEditGUI.unix.config.pri Testsuite/Makefile.unix)
+AC_OUTPUT(Makefile.unix omedit_config.h OMEditLIB/OMEditLIB.unix.config.pri OMEditLIB/Debugger/Parser/Makefile.unix OMEditLIB/Debugger/Parser/Makefile.lib.unix OMEditGUI/OMEditGUI.unix.config.pri Testsuite/Makefile.unix)

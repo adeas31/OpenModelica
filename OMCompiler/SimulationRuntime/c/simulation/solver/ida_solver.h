@@ -37,7 +37,6 @@
 #include "openmodelica.h"
 #include "simulation_data.h"
 #include "util/simulation_options.h"
-#include "sundials_error.h"
 #include "simulation/solver/solver_main.h"
 #include "omc_config.h" /* for WITH_SUNDIALS */
 
@@ -55,19 +54,6 @@
 /* readability */
 #define MINIMAL_SCALE_FACTOR 1e-8
 
-#ifndef booleantype
-#define booleantype int
-#endif
-
-#ifndef FALSE
-#define FALSE 0
-#endif
-
-#ifndef TRUE
-#define TRUE 1
-#endif
-
-
 typedef struct IDA_USERDATA
 {
   DATA* data;
@@ -78,36 +64,36 @@ typedef struct IDA_SOLVER
 {
   /* ### configuration  ### */
   int setInitialSolution;
-  int jacobianMethod;            /* specifies the method to calculate the Jacobian matrix */
-  int linearSolverMethod;        /* specifies the method to solve the linear problem */
-  int internalSteps;             /* if = 1 internal step of the integrator are used  */
-  unsigned int stepsFreq;        /* value specifies the output frequency regarding to time steps. Used in internal steps mode. */
-  double stepsTime;              /* value specifies the time increment when output happens. Used in internal steps mode. */
+  enum JACOBIAN_METHOD jacobianMethod;  /* specifies the method to calculate the Jacobian matrix */
+  enum IDA_LS linearSolverMethod;       /* specifies the method to solve the linear problem */
+  int internalSteps;                    /* if = 1 internal step of the integrator are used  */
+  unsigned int stepsFreq;               /* value specifies the output frequency regarding to time steps. Used in internal steps mode. */
+  double stepsTime;                     /* value specifies the time increment when output happens. Used in internal steps mode. */
 
   /* ### work arrays ### */
-  N_Vector y;                   /* State vector */
-  N_Vector yp;                  /* State derivative vector */
+  N_Vector y;                   /* State vector y */
+  N_Vector yp;                  /* State derivative vector y' */
 
   /* ### scaling data ### */
-  double *yScale;
-  double *ypScale;
-  double *resScale;
-  int disableScaling;           /* = 1 disables scaling temporary for particular calculations */
+  double *yScale;               /* Scaling array for states y */
+  double *ypScale;              /* Scaling array fpr derivatives y' */
+  double *resScale;             /* Scaling for residual F(t,y,y') */
+  modelica_boolean useScaling;  /* Enable / disable scaling of y and yp. */
+  SUNMatrix scaleMatrix;
 
   /* ### work array used in jacobian calculation ### */
   double sqrteps;
   double *ysave;
   double *ypsave;
   double *delta_hh;
-  N_Vector errwgt;
+  N_Vector errwgt;              /* Error weights W[i] = 1 / (rtol * |y[i]| + atol) */
   N_Vector newdelta;
 
   /* ### ida internal data ### */
   void* ida_mem;
-  int (*residualFunction)(double time, N_Vector yy, N_Vector yp, N_Vector res, void* userData);
-  IDA_USERDATA* userData;
-  SUNMatrix tmpJac;
-  SUNMatrix denseJac;
+  IDAResFn residualFunction;      /* Residual function forwarded to IDA */
+                                  /* See section 4.6.1 Residual function of SUNDIALS v5.4.0 IDA documentation */
+  IDA_USERDATA* userData;         /* */
 
   /* linear solver data */
   SUNLinearSolver linSol;   /* Linear solver object */
@@ -140,7 +126,7 @@ int ida_solver_initial(DATA* data, threadData_t *threadData,
                        SOLVER_INFO* solverInfo, IDA_SOLVER *idaData);
 
 /* deinitialize main ida Data */
-int ida_solver_deinitial(IDA_SOLVER *idaData);
+void ida_solver_deinitial(IDA_SOLVER *idaData);
 
 /* main ida function to make a step */
 int ida_solver_step(DATA* simData, threadData_t *threadData, SOLVER_INFO* solverInfo);

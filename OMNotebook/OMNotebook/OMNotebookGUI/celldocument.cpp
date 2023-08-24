@@ -160,7 +160,7 @@ namespace IAEX
     // 2005-12-01 AF, Added try-catch
     try
     {
-      if(filename_ != QString::null)
+      if(!filename_.isNull())
         open( filename_, readmode );
     }
     catch( exception &e )
@@ -666,7 +666,7 @@ namespace IAEX
 
     // save the image temporary to the harddrive
     QImageWriter writer( name, "png" );
-    writer.setDescription( tr("Temporary OMNotebook image") );
+    writer.setText("Description", tr("Temporary OMNotebook image") );
     writer.setQuality( 100 );
     writer.write( *image );
 
@@ -799,7 +799,7 @@ namespace IAEX
       if( cursor )
       {
         // ignore, if selected cell is a groupcell
-        if( typeid( *cursor->currentCell() ) != typeid( CellGroup ) )
+        if (!dynamic_cast<CellGroup*>(cursor->currentCell()))
         {
           // calculate the position of the cursor, by adding the height
           // of all the cells before the cellcursor, using a visitor

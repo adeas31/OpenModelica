@@ -1558,12 +1558,12 @@ algorithm
   outIntvl := match inClk
     case DAE.REAL_CLOCK(e)
       then e;
-    case DAE.INTEGER_CLOCK(e, e2)
+    case DAE.RATIONAL_CLOCK(e, e2)
       then DAE.BINARY(
              DAE.CAST(DAE.T_REAL_DEFAULT, e),
              DAE.DIV(DAE.T_REAL_DEFAULT),
              DAE.CAST(DAE.T_REAL_DEFAULT, e2));
-    case DAE.BOOLEAN_CLOCK(e, e2)
+    case DAE.EVENT_CLOCK(e, e2)
       then e2; // startInterval
     else
       then DAE.RCONST(0.0);
@@ -2139,6 +2139,9 @@ algorithm
         nr = nr * sizeOf(inType.ty);
       then
         nr;
+
+    case DAE.T_COMPLEX(complexClassType = ClassInf.EXTERNAL_OBJ())
+      then 0;
 
     // count the variables in record
     case DAE.T_COMPLEX(varLst = varLst)
@@ -3403,6 +3406,8 @@ algorithm
       Type ty1,ty2;
       list<DAE.Subscript> subs;
 
+    case DAE.WILD() then DAE.CREF(cr, DAE.T_UNKNOWN());
+
     case _
       equation
         ty1 = ComponentReference.crefLastType(cr);
@@ -3690,7 +3695,7 @@ public function expAdd
   input DAE.Exp e2;
   output DAE.Exp outExp;
 algorithm
-  outExp := matchcontinue(e1,e2)
+  outExp := match(e1,e2)
     local
       Type tp;
       Boolean b;
@@ -3698,24 +3703,12 @@ algorithm
       Real r1,r2;
       Integer i1,i2;
       DAE.Exp e, x, y, z;
-    case(_,_)
-      equation
-        true = isZero(e1);
-      then e2;
-    case(_,_)
-      equation
-        true = isZero(e2);
-      then e1;
-    case(DAE.RCONST(r1),DAE.RCONST(r2))
-      equation
-        r1 = realAdd(r1,r2);
-      then
-        DAE.RCONST(r1);
-    case(DAE.ICONST(i1),DAE.ICONST(i2))
-      equation
-        i1 = intAdd(i1,i2);
-      then
-        DAE.ICONST(i1);
+
+    case(_,_) guard isZero(e1)          then e2;
+    case(_,_) guard isZero(e2)          then e1;
+    case(DAE.RCONST(r1),DAE.RCONST(r2)) then DAE.RCONST(r1 + r2);
+    case(DAE.ICONST(i1),DAE.ICONST(i2)) then DAE.ICONST(i1 + i2);
+
     /* a + (-b) = a - b */
     case (_,DAE.UNARY(operator=DAE.UMINUS(),exp=e))
       then
@@ -3759,21 +3752,17 @@ algorithm
       then
         expSub(e2,DAE.BINARY(x,op,y));
 
-    case (_,_)
-      equation
-        tp = typeof(e1);
-        true = Types.isIntegerOrRealOrSubTypeOfEither(tp);
-        b = DAEUtil.expTypeArray(tp) "  array_elt_type(tp) => tp\'" ;
-        op = if b then DAE.ADD_ARR(tp) else DAE.ADD(tp);
+    case (_,_) guard Types.isIntegerOrRealOrSubTypeOfEither(typeof(e1))
+      algorithm
+        tp := typeof(e1);
+        b := DAEUtil.expTypeArray(tp) "  array_elt_type(tp) => tp\'" ;
+        op := if b then DAE.ADD_ARR(tp) else DAE.ADD(tp);
       then
         DAE.BINARY(e1,op,e2);
-    else
-      equation
-        tp = typeof(e1);
-        true = Types.isEnumeration(tp);
+    case (_,_) guard Types.isEnumeration(typeof(e1))
       then
-        DAE.BINARY(e1,DAE.ADD(tp),e2);
-  end matchcontinue;
+        DAE.BINARY(e1,DAE.ADD(typeof(e1)),e2);
+  end match;
 end expAdd;
 
 public function expSub
@@ -3783,7 +3772,7 @@ public function expSub
   input DAE.Exp e2;
   output DAE.Exp outExp;
 algorithm
-  outExp := matchcontinue(e1,e2)
+  outExp := match(e1,e2)
     local
       Type tp;
       Boolean b;
@@ -3791,26 +3780,11 @@ algorithm
       Real r1,r2;
       Integer i1,i2;
       DAE.Exp e, x,y;
-    case(_,_)
-      equation
-        true = isZero(e1);
-      then
-        negate(e2);
-    case(_,_)
-      equation
-        true = isZero(e2);
-      then
-        e1;
-    case(DAE.RCONST(r1),DAE.RCONST(r2))
-      equation
-        r1 = realSub(r1,r2);
-      then
-        DAE.RCONST(r1);
-    case(DAE.ICONST(i1),DAE.ICONST(i2))
-      equation
-        i1 = intSub(i1,i2);
-      then
-        DAE.ICONST(i1);
+    case(_,_) guard isZero(e1) then negate(e2);
+    case(_,_) guard isZero(e2) then e1;
+    case(DAE.RCONST(r1),DAE.RCONST(r2)) then DAE.RCONST(r1-r2);
+    case(DAE.ICONST(i1),DAE.ICONST(i2)) then DAE.ICONST(i1-i2);
+
     /* a - (-b) = a + b */
     case (_,DAE.UNARY(operator=DAE.UMINUS(),exp=e))
       then
@@ -3843,50 +3817,19 @@ algorithm
         e = expAdd(e,e2);
       then
         negate(e);
-    case (_,_)
-      equation
-        tp = typeof(e1);
-        if Types.isIntegerOrRealOrSubTypeOfEither(tp)
-        then
-          b = DAEUtil.expTypeArray(tp);
-          op = if b then DAE.SUB_ARR(tp) else DAE.SUB(tp);
-          outExp = DAE.BINARY(e1,op,e2);
-        else if Types.isEnumeration(tp)
-             then
-               outExp = DAE.BINARY(e1,DAE.SUB(tp),e2);
-             else
-               fail();
-             end if;
-        end if;
+
+    case (_,_) guard Types.isIntegerOrRealOrSubTypeOfEither(typeof(e1))
+      algorithm
+        tp := typeof(e1);
+        b := DAEUtil.expTypeArray(tp) "  array_elt_type(tp) => tp\'" ;
+        op := if b then DAE.SUB_ARR(tp) else DAE.SUB(tp);
       then
-        outExp;
-
-  end matchcontinue;
+        DAE.BINARY(e1,op,e2);
+    case (_,_) guard Types.isEnumeration(typeof(e1))
+      then
+        DAE.BINARY(e1,DAE.SUB(typeof(e1)),e2);
+  end match;
 end expSub;
-
-public function makeDiff
-"Takes two expressions and create
- the difference between them"
-  input DAE.Exp e1;
-  input DAE.Exp e2;
-  output DAE.Exp res;
-algorithm
-  res := if isZero(e2)
-         then e1
-         elseif isZero(e1)
-             then negate(e2)
-             else expSub(e1,e2);
-end makeDiff;
-
-public function makeDifference
-"Takes two expressions and create
- the difference between them --> a-(b+c) = a-b-c"
-  input DAE.Exp e1;
-  input DAE.Exp e2;
-  output DAE.Exp res;
-algorithm
-  res := makeDiff(e1, e2);
-end makeDifference;
 
 public function makeLBinary
 "Makes a binary logical expression of all elements in the list."
@@ -5557,24 +5500,24 @@ algorithm
       Type_a arg;
       String str;
       DAE.ClockKind clk;
-    case DAE.INTEGER_CLOCK(e1, e2)
+    case DAE.RATIONAL_CLOCK(e1, e2)
       equation
         (ea, arg) = traverseExpBottomUp(e1, func, inArg);
         (eb, arg) = traverseExpBottomUp(e2, func, inArg);
         clk = if referenceEq(ea, e1) and referenceEq(eb, e2)
-              then inClk else DAE.INTEGER_CLOCK(ea, eb);
+              then inClk else DAE.RATIONAL_CLOCK(ea, eb);
       then (clk, arg);
     case DAE.REAL_CLOCK(e)
       equation
         (e1, arg) = traverseExpBottomUp(e, func, inArg);
         clk = if referenceEq(e1, e) then inClk else DAE.REAL_CLOCK(e1);
       then (clk, arg);
-    case DAE.BOOLEAN_CLOCK(e1, e2)
+    case DAE.EVENT_CLOCK(e1, e2)
       equation
         (ea, arg) = traverseExpBottomUp(e1, func, inArg);
         (eb, arg) = traverseExpBottomUp(e2, func, inArg);
         clk = if referenceEq(ea, e1) and referenceEq(eb, e2)
-              then inClk else DAE.BOOLEAN_CLOCK(ea, eb);
+              then inClk else DAE.EVENT_CLOCK(ea, eb);
       then (clk, arg);
     case DAE.SOLVER_CLOCK(e1, e2)
       equation
@@ -5611,24 +5554,24 @@ algorithm
       String str;
       DAE.ClockKind clk;
 
-    case DAE.INTEGER_CLOCK(e1, e2)
+    case DAE.RATIONAL_CLOCK(e1, e2)
       equation
         (ea, arg) = traverseExpTopDown(e1, func, inArg);
         (eb, arg) = traverseExpTopDown(e2, func, inArg);
         clk = if referenceEq(ea, e1) and referenceEq(eb, e2)
-              then inClk else DAE.INTEGER_CLOCK(ea, eb);
+              then inClk else DAE.RATIONAL_CLOCK(ea, eb);
       then (clk, arg);
     case DAE.REAL_CLOCK(e)
       equation
         (e1, arg) = traverseExpTopDown(e, func, inArg);
         clk = if referenceEq(e1, e) then inClk else DAE.REAL_CLOCK(e1);
       then (clk, arg);
-    case DAE.BOOLEAN_CLOCK(e1, e2)
+    case DAE.EVENT_CLOCK(e1, e2)
       equation
         (ea, arg) = traverseExpTopDown(e1, func, inArg);
         (eb, arg) = traverseExpTopDown(e2, func, inArg);
         clk = if referenceEq(ea, e1) and referenceEq(eb, e2)
-              then inClk else DAE.BOOLEAN_CLOCK(ea, eb);
+              then inClk else DAE.EVENT_CLOCK(ea, eb);
       then (clk, arg);
     case DAE.SOLVER_CLOCK(e1, e2)
       equation
@@ -6048,14 +5991,6 @@ algorithm
       then
         (cr, arg);
 
-    case DAE.CREF_ITER(id, idx, ty, subs)
-      equation
-        (new_ty, arg) = traverseExpTypeDims(ty, inFunc, inArg);
-        cr = if referenceEq(new_ty, ty)
-          then inCref else DAE.CREF_ITER(id, idx, new_ty, subs);
-      then
-        (cr, arg);
-
     else (inCref, inArg);
   end match;
 end traverseExpCrefDims;
@@ -6140,12 +6075,16 @@ algorithm
 end traverseExpTypeDims2;
 
 public function extractUniqueCrefsFromExp
-  "Extracts all unique ComponentRef from an Expression."
+  "Extracts all unique ComponentRef from an Expression.
+  If `expand` is true crefs will be expanded."
   input DAE.Exp inExp;
+  input Boolean expand = true;
   output list<DAE.ComponentRef> ocrefs;
 algorithm
-  // ocrefs := List.unique(List.flatten(List.map1(extractCrefsFromExp(inExp), ComponentReference.expandCref, true)));
   ocrefs := List.unique(extractCrefsFromExp(inExp));
+  if expand then
+    ocrefs := List.flatten(List.map1(ocrefs, ComponentReference.expandCref, true));
+  end if;
 end extractUniqueCrefsFromExp;
 
 public function extractCrefsFromExp "
@@ -6180,23 +6119,28 @@ public function extractUniqueCrefsFromExpDerPreStart
   "author mahge: Same as extractUniqueCrefsFromExp except:
   This function will not treat der(), pre() and start() as calls
   but as unique ids. i.e. x is different from der(x) and given der(x) x will not
-  be extreacted as a unique id. Instead you get $DER.x. Same oes for pre and start.."
+  be extreacted as a unique id. Instead you get $DER.x. Same goes for pre and start."
   input DAE.Exp inExp;
+  input Boolean expand = true;
   output list<DAE.ComponentRef> ocrefs;
 algorithm
-  // ocrefs := List.unique(List.flatten(List.map1(extractCrefsFromExp(inExp), ComponentReference.expandCref, true)));
-  ocrefs := List.unique(extractCrefsFromExpDerPreStart(inExp));
+  ocrefs := List.unique(extractCrefsFromExpDerPreStart(inExp, expand));
 end extractUniqueCrefsFromExpDerPreStart;
 
 public function extractCrefsFromExpDerPreStart
 " author mahge: Same as extractCrefsFromExp except:
   This function will not treat der(), pre() and start() as calls
   but as unique ids. i.e. x is different from der(x) and given der(x) x will not
-  be extreacted as a unique id. Instead you get $DER.x. Same oes for pre and start."
+  be extreacted as a unique id. Instead you get $DER.x. Same goes for pre and start.
+  If `expand` is true crefs will be expanded."
   input DAE.Exp inExp;
+  input Boolean expand;
   output list<DAE.ComponentRef> ocrefs;
 algorithm
   (_,ocrefs) := traverseExpTopDown(inExp, traversingComponentRefFinderDerPreStart, {});
+  if expand then
+    ocrefs := List.flatten(List.map1(ocrefs, ComponentReference.expandCref, true));
+  end if;
 end extractCrefsFromExpDerPreStart;
 
 public function traversingComponentRefFinderDerPreStart "
@@ -6271,22 +6215,22 @@ algorithm
 
     case DAE.STMT_ASSIGN(exp1 = exp1, exp = exp2)
       equation
-        olcrefs = extractCrefsFromExpDerPreStart(exp1);
-        orcrefs = extractCrefsFromExpDerPreStart(exp2);
+        olcrefs = extractCrefsFromExpDerPreStart(exp1, false);
+        orcrefs = extractCrefsFromExpDerPreStart(exp2, false);
       then
         (olcrefs,orcrefs);
 
     case DAE.STMT_TUPLE_ASSIGN(expExpLst = expLst, exp = exp2)
       equation
-        olcrefs = List.flatten(List.map(expLst, extractCrefsFromExpDerPreStart));
-        orcrefs = extractCrefsFromExpDerPreStart(exp2);
+        olcrefs = List.flatten(List.map1(expLst, extractCrefsFromExpDerPreStart, false));
+        orcrefs = extractCrefsFromExpDerPreStart(exp2, false);
       then
         (olcrefs,orcrefs);
 
     case DAE.STMT_ASSIGN_ARR(lhs = exp1, exp = exp2)
       equation
-        olcrefs = extractCrefsFromExpDerPreStart(exp1);
-        orcrefs = extractCrefsFromExpDerPreStart(exp2);
+        olcrefs = extractCrefsFromExpDerPreStart(exp1, false);
+        orcrefs = extractCrefsFromExpDerPreStart(exp2, false);
       then
         (olcrefs,orcrefs);
 
@@ -6316,7 +6260,7 @@ algorithm
 
     case DAE.STMT_ASSERT(cond = exp1)
       equation
-        orcrefs = extractCrefsFromExpDerPreStart(exp1);
+        orcrefs = extractCrefsFromExpDerPreStart(exp1, false);
       then
         ({},orcrefs);
 
@@ -6349,17 +6293,17 @@ algorithm
 
     case DAE.STMT_ASSIGN(exp1 = exp1)
       equation
-        lhsCrefs = extractCrefsFromExpDerPreStart(exp1);
+        lhsCrefs = extractCrefsFromExpDerPreStart(exp1, false);
       then lhsCrefs;
 
     case DAE.STMT_TUPLE_ASSIGN(expExpLst = expLst)
       equation
-        lhsCrefs = List.flatten(List.map(expLst, extractCrefsFromExpDerPreStart));
+        lhsCrefs = List.flatten(List.map1(expLst, extractCrefsFromExpDerPreStart, false));
       then lhsCrefs;
 
     case DAE.STMT_ASSIGN_ARR(lhs = exp1)
       equation
-        lhsCrefs = extractCrefsFromExpDerPreStart(exp1);
+        lhsCrefs = extractCrefsFromExpDerPreStart(exp1, false);
       then lhsCrefs;
 
     case DAE.STMT_IF(statementLst = stmtLst)
@@ -7397,13 +7341,6 @@ algorithm
       then
         (cr, arg);
 
-    case (DAE.CREF_ITER(ident = name, index = ix, identType = ty, subscriptLst = subs), _, arg)
-      equation
-        (subs_1, arg) = traverseExpSubs(subs, rel, arg);
-        cr = if referenceEq(subs,subs_1) then inCref else DAE.CREF_ITER(name, ix, ty, subs_1);
-      then
-        (cr, arg);
-
     case (DAE.OPTIMICA_ATTR_INST_CREF(componentRef = cr, instant = instant), _, arg)
       equation
         (cr_1, arg) = traverseExpCref(cr, rel, arg);
@@ -7796,8 +7733,8 @@ algorithm
     // cosh(x)
     case DAE.CALL(path = Absyn.IDENT("cosh")) then true;
       /* literals */
-    case DAE.ICONST(i) then i>=0;
-    case DAE.RCONST(r) then realGe(r,0.0);
+    case DAE.ICONST(i) then i >= 0;
+    case DAE.RCONST(r) then r >= 0.0;
       /* e1 + e2 */
     case DAE.BINARY(e1,DAE.ADD(),e2)
       then isPositiveOrZero(e1) and isPositiveOrZero(e2);
@@ -7854,6 +7791,12 @@ algorithm
   end match;
 end isNegativeOrZero;
 
+function isGreaterOrEqual
+  input DAE.Exp exp1;
+  input DAE.Exp exp2;
+  output Boolean isGreaterOrEqual = isPositiveOrZero(ExpressionSimplify.simplify(expSub(exp1, exp2)));
+end isGreaterOrEqual;
+
 public function isHalf
 "Returns true if an expression is 0.5"
   input DAE.Exp inExp;
@@ -7887,7 +7830,7 @@ public function isImpure "author: lochel
   input DAE.Exp inExp;
   output Boolean outBoolean;
 algorithm
-  outBoolean := isConstWork(inExp);
+  outBoolean := isConst(inExp);
   (_, outBoolean) := traverseExpTopDown(inExp, isImpureWork, false);
 end isImpure;
 
@@ -7985,14 +7928,6 @@ algorithm
   end if;
 end containsRecordTypeWork;
 
-public function isConst
-"Returns true if an expression is constant"
-  input DAE.Exp inExp;
-  output Boolean outBoolean;
-algorithm
-  outBoolean := isConstWork(inExp);
-end isConst;
-
 public function isEvaluatedConst
 "Returns true if an expression is really a constant scalar value. no calls, casts, or something"
   input DAE.Exp inExp;
@@ -8040,7 +7975,7 @@ algorithm
   end match;
 end getEvaluatedConstReal;
 
-protected function isConstWork
+public function isConst
 "Returns true if an expression is constant"
   input DAE.Exp inExp;
   output Boolean outBoolean;
@@ -8061,38 +7996,38 @@ algorithm
     case (DAE.SCONST()) then true;
     case (DAE.ENUM_LITERAL()) then true;
 
-    case (DAE.UNARY(exp = e)) then isConstWork(e);
+    case (DAE.UNARY(exp = e)) then isConst(e);
 
-    case (DAE.CAST(exp = e)) then isConstWork(e);
+    case (DAE.CAST(exp = e)) then isConst(e);
 
     case (DAE.BINARY(e1,_,e2))
       equation
-        res = isConstWork(e2);
+        res = isConst(e2);
       then
-        if res then isConstWork(e1) else false;
+        if res then isConst(e1) else false;
 
     case (DAE.IFEXP(e,e1,e2))
       equation
-        res = isConstWork(e2);
+        res = isConst(e2);
         if res then
-          res = isConstWork(e1);
+          res = isConst(e1);
         end if;
       then
-        if res then isConstWork(e) else false;
+        if res then isConst(e) else false;
 
     case (DAE.LBINARY(exp1=e1,exp2=e2))
       equation
-        res = isConstWork(e2);
+        res = isConst(e2);
       then
-        if res then isConstWork(e1) else false;
+        if res then isConst(e1) else false;
 
-    case (DAE.LUNARY(exp=e)) then isConstWork(e);
+    case (DAE.LUNARY(exp=e)) then isConst(e);
 
     case (DAE.RELATION(exp1=e1,exp2=e2))
       equation
-        res = isConstWork(e2);
+        res = isConst(e2);
       then
-        if res then isConstWork(e1) else false;
+        if res then isConst(e1) else false;
 
     case (DAE.ARRAY(array = ae)) then isConstWorkList(ae);
 
@@ -8100,18 +8035,18 @@ algorithm
 
     case (DAE.RANGE(start=e1,step=NONE(),stop=e2))
       equation
-        res = isConstWork(e2);
+        res = isConst(e2);
       then
-        if res then isConstWork(e1) else false;
+        if res then isConst(e1) else false;
 
     case (DAE.RANGE(start=e,step=SOME(e1),stop=e2))
       equation
-        res = isConstWork(e2);
+        res = isConst(e2);
         if res then
-          res = isConstWork(e1);
+          res = isConst(e1);
         end if;
       then
-        if res then isConstWork(e) else false;
+        if res then isConst(e) else false;
 
     case (DAE.PARTEVALFUNCTION(expList = ae)) then isConstWorkList(ae);
 
@@ -8119,19 +8054,19 @@ algorithm
 
     case (DAE.ASUB(exp=e,sub=ae))
       equation
-        res = isConstWork(e);
+        res = isConst(e);
       then
         if res then isConstWorkList(ae) else false;
 
-    case (DAE.TSUB(exp=e)) then isConstWork(e);
+    case (DAE.TSUB(exp=e)) then isConst(e);
 
-    case (DAE.SIZE(exp=e,sz=NONE())) then isConstWork(e);
+    case (DAE.SIZE(exp=e,sz=NONE())) then isConst(e);
 
     case (DAE.SIZE(exp=e1,sz=SOME(e2)))
       equation
-        res = isConstWork(e2);
+        res = isConst(e2);
       then
-        if res then isConstWork(e1) else false;
+        if res then isConst(e1) else false;
 
     case (DAE.CALL(expLst=ae, attr=DAE.CALL_ATTR(builtin=false, isImpure=false))) then isConstWorkList(ae);
     case (DAE.CALL(path=path, expLst=ae, attr=DAE.CALL_ATTR(builtin=true))) then
@@ -8144,15 +8079,15 @@ algorithm
       /*TODO:Make this work for multiple iters, guard exps*/
     case (DAE.REDUCTION(expr=e1,iterators={DAE.REDUCTIONITER(exp=e2)}))
       equation
-        res = isConstWork(e2);
+        res = isConst(e2);
       then
-        if res then isConstWork(e1) else false;
+        if res then isConst(e1) else false;
 
-    case(DAE.BOX(exp=e)) then isConstWork(e);
+    case(DAE.BOX(exp=e)) then isConst(e);
 
     else false;
   end match;
-end isConstWork;
+end isConst;
 
 protected function isConstValueWork
 "Returns true if an expression is a constant value"
@@ -8200,7 +8135,7 @@ algorithm
   exps := inExps;
   while b and not listEmpty(exps) loop
     e::exps := exps;
-    b := isConstWork(e);
+    b := isConst(e);
   end while;
   outBoolean := b;
 end isConstWorkList;
@@ -8702,7 +8637,7 @@ algorithm
     case (DAE.ARRAY(array = elst))
       then
         List.mapBoolOr(elst, containVectorFunctioncall);
-    // matrixes
+    // matrices
     case (DAE.MATRIX(matrix = explst))
       equation
         flatexplst = List.flatten(explst);
@@ -9694,6 +9629,17 @@ public function containsExp
 algorithm
   outBoolean:= expContains(inExp2,inExp1);
 end containsExp;
+
+public function isExpCref
+"Returns true if expression is a componentRef"
+  input DAE.Exp e;
+  output Boolean res;
+algorithm
+  res := match(e)
+    case(DAE.CREF(_,_)) then true;
+    else false;
+  end match;
+end isExpCref;
 
 public function isExpCrefOrIfExp
 "Returns true if expression is a componentRef or an if expression"
@@ -11123,16 +11069,6 @@ algorithm
   end match;
 end promoteExp3;
 
-public function hashExpMod "
-author: PA
-hash expression to value in range [0,mod-1]"
-  input DAE.Exp e;
-  input Integer mod;
-  output Integer hash;
-algorithm
-  hash := intMod(intAbs(hashExp(e)),mod);
-end hashExpMod;
-
 public function hashExp "help function to hashExpMod"
   input DAE.Exp e;
   output Integer hash;
@@ -11705,6 +11641,25 @@ algorithm
   end matchcontinue;
 end dimensionsList;
 
+public function hasZeroDimension
+  "Returns true if at least one dimension is zero or dimensions is empty list."
+  input DAE.Dimensions inDims;
+  output Boolean hasZeroDimension = false;
+protected
+  list<Integer> intDims;
+algorithm
+  if listLength(inDims) == 0 then
+    hasZeroDimension := true;
+    return;
+  end if;
+  intDims := dimensionsList(inDims);
+  for dim in intDims loop
+    if dim == 0 then
+      hasZeroDimension := true;
+      break;
+    end if;
+  end for;
+end hasZeroDimension;
 
 public function expDimensionsList
   "Extracts a list of integers from a list of expressions"
@@ -13340,6 +13295,7 @@ algorithm
     case DAE.RCONST() then true;
     case DAE.SCONST() then true;
     case DAE.BCONST() then true;
+    case DAE.ENUM_LITERAL() then true;
     case DAE.BINARY() then true;
     case DAE.UNARY() then true;
     case DAE.LBINARY() then true;

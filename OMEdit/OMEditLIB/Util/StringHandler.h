@@ -103,12 +103,13 @@ public:
   static QString getArrowString(StringHandler::Arrow type);
   static QComboBox* getStartArrowComboBox();
   static QComboBox* getEndArrowComboBox();
-  static int getFontWeight(QList<StringHandler::TextStyle> styleList);
-  static bool getFontItalic(QList<StringHandler::TextStyle> styleList);
-  static bool getFontUnderline(QList<StringHandler::TextStyle> styleList);
+  static int getFontWeight(QVector<TextStyle> styleList);
+  static bool getFontItalic(QVector<StringHandler::TextStyle> styleList);
+  static bool getFontUnderline(QVector<StringHandler::TextStyle> styleList);
   static Qt::Alignment getTextAlignment(StringHandler::TextAlignment alignment);
   static StringHandler::TextAlignment getTextAlignmentType(QString alignment);
   static QString getTextAlignmentString(StringHandler::TextAlignment alignment);
+  static StringHandler::TextStyle getTextStyleType(QString textStyle);
   static QString getTextStyleString(StringHandler::TextStyle textStyle);
   static QString removeFirstLastCurlBrackets(QString value);
   static QString removeFirstLastParentheses(QString value);
@@ -123,6 +124,7 @@ public:
   static QString removeFirstWordAfterDot(QString value);
   static QString escapeString(QString value);
   static QString escapeStringQuotes(QString value);
+  static QString escapeTextAnnotationString(QString value);
   // Returns "" if the string is not a standard Modelica string. Else it unparses it into normal form.
   static QString unparse(QString value);
   // Returns empty list if the string is not a standard Modelica string-array. Else it unparses it into normal form.
@@ -150,14 +152,11 @@ public:
   static QStringList makeVariableParts(QString variable);
   static QStringList makeVariablePartsWithInd(QString variable);
   static bool naturalSort(const QString &s1, const QString &s2);
-  static QString cleanResultVariable(const QString &variable);
-  static bool naturalSortForResultVariables(const QString &s1, const QString &s2);
-#ifdef WIN32
+#if defined(_WIN32)
   static QProcessEnvironment simulationProcessEnvironment();
 #endif
   static StringHandler::SimulationMessageType getSimulationMessageType(QString type);
   static QString getSimulationMessageTypeString(StringHandler::SimulationMessageType type);
-  static QColor getSimulationMessageTypeColor(StringHandler::SimulationMessageType type);
   static QString makeClassNameRelative(QString draggedClassName, QString droppedClassName);
   static QString toCamelCase(QString str);
   static QMap<int, int> getLeadingSpaces(QString contents);
@@ -169,7 +168,8 @@ public:
   static QString removeLeadingSpaces(QString contents);
   static QString removeLine(QString text, QString lineToRemove);
   static QString insertClassAtPosition(QString parentClassText, QString childClassText, int linePosition, int nestedLevel);
-  static QString number(double value, char format = 'g', int precision = 16);
+  static QString number(double value, QString hint = "", char format = 'g', int precision = 16);
+  static QString convertSemVertoReadableString(const QString &semver);
 protected:
   static QString mLastOpenDir;
 };

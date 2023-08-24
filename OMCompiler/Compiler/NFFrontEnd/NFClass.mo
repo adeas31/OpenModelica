@@ -31,6 +31,7 @@
 
 encapsulated uniontype NFClass
 
+import Attributes = NFAttributes;
 import Component = NFComponent;
 import Dimension = NFDimension;
 import Expression = NFExpression;
@@ -93,6 +94,7 @@ constant Prefixes DEFAULT_PREFIXES = Prefixes.PREFIXES(
   record PARTIAL_CLASS
     ClassTree elements;
     Modifier modifier;
+    Modifier ccMod;
     Prefixes prefixes;
   end PARTIAL_CLASS;
 
@@ -107,6 +109,7 @@ constant Prefixes DEFAULT_PREFIXES = Prefixes.PREFIXES(
   record EXPANDED_CLASS
     ClassTree elements;
     Modifier modifier;
+    Modifier ccMod;
     Prefixes prefixes;
     Restriction restriction;
   end EXPANDED_CLASS;
@@ -114,9 +117,10 @@ constant Prefixes DEFAULT_PREFIXES = Prefixes.PREFIXES(
   record EXPANDED_DERIVED
     InstNode baseClass;
     Modifier modifier;
+    Modifier ccMod;
     array<Dimension> dims;
     Prefixes prefixes;
-    Component.Attributes attributes;
+    Attributes attributes;
     Restriction restriction;
   end EXPANDED_DERIVED;
 
@@ -154,7 +158,7 @@ constant Prefixes DEFAULT_PREFIXES = Prefixes.PREFIXES(
     ClassTree tree;
   algorithm
     tree := ClassTree.fromSCode(elements, isClassExtends, scope);
-    cls := PARTIAL_CLASS(tree, Modifier.NOMOD(), prefixes);
+    cls := PARTIAL_CLASS(tree, Modifier.NOMOD(), Modifier.NOMOD(), prefixes);
   end fromSCode;
 
   function fromEnumeration
@@ -187,7 +191,7 @@ constant Prefixes DEFAULT_PREFIXES = Prefixes.PREFIXES(
   algorithm
     cls := match cls
       case PARTIAL_CLASS()
-        then EXPANDED_CLASS(cls.elements, cls.modifier, cls.prefixes, Restriction.UNKNOWN());
+        then EXPANDED_CLASS(cls.elements, cls.modifier, cls.ccMod, cls.prefixes, Restriction.UNKNOWN());
     end match;
   end initExpandedClass;
 
@@ -209,6 +213,12 @@ constant Prefixes DEFAULT_PREFIXES = Prefixes.PREFIXES(
     cls := match cls
       case INSTANCED_CLASS()
         then INSTANCED_CLASS(cls.ty, cls.elements, sections, cls.prefixes, cls.restriction);
+
+      case TYPED_DERIVED()
+        algorithm
+          InstNode.classApply(cls.baseClass, setSections, sections);
+        then
+          cls;
     end match;
   end setSections;
 
@@ -220,6 +230,23 @@ constant Prefixes DEFAULT_PREFIXES = Prefixes.PREFIXES(
   algorithm
     (node, isImport) := ClassTree.lookupElement(name, classTree(cls));
   end lookupElement;
+
+  function tryLookupElement
+    input String name;
+    input Class cls;
+    output Option<InstNode> node;
+    output Boolean isImport;
+  protected
+    InstNode n;
+  algorithm
+    try
+      (n, isImport) := ClassTree.lookupElement(name, classTree(cls));
+      node := SOME(n);
+    else
+      node := NONE();
+      isImport := false;
+    end try;
+  end tryLookupElement;
 
   function lookupComponentIndex
     input String name;
@@ -257,6 +284,17 @@ constant Prefixes DEFAULT_PREFIXES = Prefixes.PREFIXES(
     input Class cls;
     output Option<Expression> value = Binding.typedExp(lookupAttributeBinding(name, cls));
   end lookupAttributeValue;
+
+  function isOnlyBuiltin
+    input Class cls;
+    output Boolean builtin;
+  algorithm
+    builtin := match cls
+      case PARTIAL_BUILTIN() then true;
+      case INSTANCED_BUILTIN() then true;
+      else false;
+    end match;
+  end isOnlyBuiltin;
 
   function isBuiltin
     input Class cls;
@@ -330,6 +368,18 @@ constant Prefixes DEFAULT_PREFIXES = Prefixes.PREFIXES(
       else Modifier.NOMOD();
     end match;
   end getModifier;
+
+  function getCCModifier
+    input Class cls;
+    output Modifier modifier;
+  algorithm
+    modifier := match cls
+      case PARTIAL_CLASS() then cls.ccMod;
+      case EXPANDED_CLASS() then cls.ccMod;
+      case EXPANDED_DERIVED() then cls.ccMod;
+      else Modifier.NOMOD();
+    end match;
+  end getCCModifier;
 
   function setModifier
     input Modifier modifier;
@@ -462,11 +512,11 @@ constant Prefixes DEFAULT_PREFIXES = Prefixes.PREFIXES(
 
   function getAttributes
     input Class cls;
-    output Component.Attributes attr;
+    output Attributes attr;
   algorithm
     attr := match cls
       case EXPANDED_DERIVED() then cls.attributes;
-      else NFComponent.DEFAULT_ATTR;
+      else NFAttributes.DEFAULT_ATTR;
     end match;
   end getAttributes;
 
@@ -500,11 +550,7 @@ constant Prefixes DEFAULT_PREFIXES = Prefixes.PREFIXES(
       case PARTIAL_BUILTIN() then cls.ty;
       case EXPANDED_DERIVED() then getType(InstNode.getClass(cls.baseClass), cls.baseClass);
       case INSTANCED_CLASS() then cls.ty;
-      case INSTANCED_BUILTIN()
-        then match cls.ty
-          case Type.POLYMORPHIC("") then Type.POLYMORPHIC(InstNode.name(clsNode));
-          else cls.ty;
-        end match;
+      case INSTANCED_BUILTIN() then cls.ty;
       case TYPED_DERIVED() then cls.ty;
       else Type.UNKNOWN();
     end match;
@@ -603,6 +649,18 @@ constant Prefixes DEFAULT_PREFIXES = Prefixes.PREFIXES(
     output Boolean isFunction = Restriction.isFunction(restriction(cls));
   end isFunction;
 
+  function isEnumeration
+    input Class cls;
+    output Boolean isEnum;
+  algorithm
+    isEnum := match cls
+      case PARTIAL_BUILTIN(ty = Type.ENUMERATION()) then true;
+      case EXPANDED_DERIVED() then isEnumeration(InstNode.getClass(cls.baseClass));
+      case TYPED_DERIVED() then isEnumeration(InstNode.getClass(cls.baseClass));
+      else false;
+    end match;
+  end isEnumeration;
+
   function isExternalFunction
     input Class cls;
     output Boolean isExtFunc;
@@ -652,6 +710,18 @@ constant Prefixes DEFAULT_PREFIXES = Prefixes.PREFIXES(
     input output Class cls;
   algorithm
     () := match cls
+      case PARTIAL_CLASS()
+        algorithm
+          cls.prefixes := prefs;
+        then
+          ();
+
+      case PARTIAL_BUILTIN()
+        algorithm
+          cls.prefixes := prefs;
+        then
+          ();
+
       case EXPANDED_CLASS()
         algorithm
           cls.prefixes := prefs;
@@ -664,6 +734,11 @@ constant Prefixes DEFAULT_PREFIXES = Prefixes.PREFIXES(
         then
           ();
 
+      case INSTANCED_CLASS()
+        algorithm
+          cls.prefixes := prefs;
+        then
+          ();
     end match;
   end setPrefixes;
 
@@ -751,7 +826,7 @@ constant Prefixes DEFAULT_PREFIXES = Prefixes.PREFIXES(
     ty as Type.COMPLEX(complexTy = ComplexType.RECORD(ty_node)) := getType(cls, clsNode);
     fields := ClassTree.getComponents(classTree(cls));
     args := list(Binding.getExp(Component.getImplicitBinding(InstNode.component(f))) for f in fields);
-    exp := Expression.makeRecord(InstNode.scopePath(ty_node, includeRoot = true), ty, args);
+    exp := Expression.makeRecord(InstNode.fullPath(ty_node), ty, args);
   end makeRecordExp;
 
   function toFlatStream

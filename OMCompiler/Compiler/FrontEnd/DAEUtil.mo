@@ -73,6 +73,7 @@ import Types;
 import Util;
 import StateMachineFlatten;
 import VarTransform;
+import MetaModelica.Dangerous.listReverseInPlace;
 
 public function constStr "return the DAE.Const as a string. (VAR|PARAM|CONST)
 Used for debugging."
@@ -448,6 +449,11 @@ algorithm
         then ();
 
       case DAE.FOR_EQUATION()
+        algorithm
+          DoubleEnded.push_back(eqs, elt);
+        then ();
+
+      case DAE.INITIAL_FOR_EQUATION()
         algorithm
           DoubleEnded.push_back(eqs, elt);
         then ();
@@ -896,18 +902,26 @@ end setMinMax;
 
 public function getStartAttr "
   Return the start attribute."
-  input Option<DAE.VariableAttributes> inVariableAttributesOption;
+  input Option<DAE.VariableAttributes> inAttributes;
+  input DAE.Type inType;
   output DAE.Exp start;
+protected
+  DAE.Exp e;
 algorithm
-  start := match(inVariableAttributesOption)
-    local
-      DAE.Exp r;
-    case (SOME(DAE.VAR_ATTR_REAL(start = SOME(r)))) then r;
-    case (SOME(DAE.VAR_ATTR_INT(start = SOME(r)))) then r;
-    case (SOME(DAE.VAR_ATTR_BOOL(start = SOME(r)))) then r;
-    case (SOME(DAE.VAR_ATTR_STRING(start = SOME(r)))) then r;
-    case (SOME(DAE.VAR_ATTR_ENUMERATION(start = SOME(r)))) then r;
-    else DAE.RCONST(0.0);
+  start := match inAttributes
+    case SOME(DAE.VAR_ATTR_REAL(start = SOME(e))) then e;
+    case SOME(DAE.VAR_ATTR_INT(start = SOME(e))) then e;
+    case SOME(DAE.VAR_ATTR_BOOL(start = SOME(e))) then e;
+    case SOME(DAE.VAR_ATTR_STRING(start = SOME(e))) then e;
+    case SOME(DAE.VAR_ATTR_ENUMERATION(start = SOME(e))) then e;
+    else
+      match Types.getBasicType(inType)
+        case DAE.Type.T_INTEGER() then DAE.ICONST(0);
+        case DAE.Type.T_STRING() then DAE.SCONST("");
+        case DAE.Type.T_BOOL() then DAE.BCONST(false);
+        case DAE.Type.T_ENUMERATION() then Types.getNthEnumLiteral(inType, 1);
+        else DAE.RCONST(0.0);
+      end match;
   end match;
 end getStartAttr;
 
@@ -1108,11 +1122,10 @@ public function getNominalAttr "
   input Option<DAE.VariableAttributes> attr;
   output DAE.Exp nominal;
 algorithm
-  nominal:=
-  match (attr)
+  nominal:= match attr
     local
       DAE.Exp n;
-    case (SOME(DAE.VAR_ATTR_REAL(nominal=SOME(n)))) then n;
+    case SOME(DAE.VAR_ATTR_REAL(nominal=SOME(n))) then n;
     else DAE.RCONST(1.0);
   end match;
 end getNominalAttr;
@@ -1281,6 +1294,21 @@ algorithm
       then SOME(DAE.VAR_ATTR_ENUMERATION(q,min,max,u,fixed,eb,ip,fn,so));
   end match;
 end setFixedAttr;
+
+public function getFixedAttr "
+  retrieves the protected attribute form VariableAttributes."
+  input Option<DAE.VariableAttributes> attr;
+  output Option<DAE.Exp> isFixed;
+algorithm
+  isFixed := match(attr)
+    case (SOME(DAE.VAR_ATTR_REAL(fixed=isFixed))) then isFixed;
+    case (SOME(DAE.VAR_ATTR_INT(fixed=isFixed))) then isFixed;
+    case (SOME(DAE.VAR_ATTR_BOOL(fixed=isFixed))) then isFixed;
+    case (SOME(DAE.VAR_ATTR_STRING(fixed=isFixed))) then isFixed;
+    case (SOME(DAE.VAR_ATTR_ENUMERATION(fixed=isFixed))) then isFixed;
+    else NONE();
+  end match;
+end getFixedAttr;
 
 public function setFinalAttr "
   sets the start attribute. If NONE(), assumes Real attributes."
@@ -1541,6 +1569,17 @@ algorithm
   DAE.TYPES_VAR(attributes = DAE.ATTR(variability = var)) := inVar;
   outIsParamOrConst := SCodeUtil.isParameterOrConst(var);
 end isParamOrConstVar;
+
+public function isConstVar
+  "Return true if variable has variability CONST."
+  input DAE.Var var;
+  output Boolean isConstVar = false;
+algorithm
+  isConstVar := match var.attributes.variability
+    case SCode.CONST() then true;
+    else false;
+  end match;
+end isConstVar;
 
 public function isNotParamOrConstVar
   input DAE.Var inVar;
@@ -4227,6 +4266,15 @@ algorithm
       then
         ();
 
+    case DAE.INITIAL_FOR_EQUATION(range = e1, equations = el)
+      algorithm
+        (new_e1, arg) := func(e1, arg);
+        if not referenceEq(e1, new_e1) then element.range := new_e1; end if;
+        (new_el, arg) := traverseDAEElementList(el, func, arg);
+        if not referenceEq(el, new_el) then element.equations := new_el; end if;
+      then
+        ();
+
     case DAE.COMP(dAElist = el)
       algorithm
         (new_el, arg) := traverseDAEElementList(el, func, arg);
@@ -4515,7 +4563,6 @@ algorithm
       DAE.Statement x,ew,ew_1;
       Boolean b1;
       String id1,str;
-      Integer ix;
       DAE.ElementSource source;
       DAE.Else algElse,algElse1;
       Type_a extraArg;
@@ -4570,18 +4617,18 @@ algorithm
         stmts1 = if not b and referenceEq(e,e_1) and referenceEq(stmts,stmts2) and referenceEq(algElse,algElse1) then (inStmt::{}) else stmts1;
       then (stmts1,extraArg);
 
-    case (DAE.STMT_FOR(type_=tp,iterIsArray=b1,iter=id1,index=ix,range=e,statementLst=stmts, source = source),_,_,extraArg)
+    case (DAE.STMT_FOR(type_=tp,iterIsArray=b1,iter=id1,range=e,statementLst=stmts, source = source),_,_,extraArg)
       equation
         (stmts2, extraArg) = traverseDAEEquationsStmtsList(stmts,func,opt,extraArg);
         (e_1, extraArg) = func(e, extraArg);
-        x = if referenceEq(e,e_1) and referenceEq(stmts,stmts2) then inStmt else DAE.STMT_FOR(tp,b1,id1,ix,e_1,stmts2,source);
+        x = if referenceEq(e,e_1) and referenceEq(stmts,stmts2) then inStmt else DAE.STMT_FOR(tp,b1,id1,e_1,stmts2,source);
       then (x::{},extraArg);
 
-    case (DAE.STMT_PARFOR(type_=tp,iterIsArray=b1,iter=id1,index=ix,range=e,statementLst=stmts, loopPrlVars=loopPrlVars, source = source),_,_,extraArg)
+    case (DAE.STMT_PARFOR(type_=tp,iterIsArray=b1,iter=id1,range=e,statementLst=stmts, loopPrlVars=loopPrlVars, source = source),_,_,extraArg)
       equation
         (stmts2, extraArg) = traverseDAEEquationsStmtsList(stmts,func,opt,extraArg);
         (e_1, extraArg) = func(e, extraArg);
-        x = if referenceEq(e,e_1) and referenceEq(stmts,stmts2) then inStmt else DAE.STMT_PARFOR(tp,b1,id1,ix,e_1,stmts2,loopPrlVars,source);
+        x = if referenceEq(e,e_1) and referenceEq(stmts,stmts2) then inStmt else DAE.STMT_PARFOR(tp,b1,id1,e_1,stmts2,loopPrlVars,source);
       then (x::{},extraArg);
 
     case (DAE.STMT_WHILE(exp = e,statementLst=stmts, source = source),_,_,extraArg)
@@ -4706,8 +4753,8 @@ public function traverseDAEStmts
   input list<DAE.Statement> inStmts;
   input FuncExpType func;
   input Type_a iextraArg;
-  output list<DAE.Statement> outStmts;
-  output Type_a oextraArg;
+  output list<DAE.Statement> outStmts = {};
+  output Type_a extraArg = iextraArg;
   partial function FuncExpType
     input DAE.Exp inExp;
     input DAE.Statement inStmt;
@@ -4716,167 +4763,156 @@ public function traverseDAEStmts
     output Type_a oarg;
   end FuncExpType;
   replaceable type Type_a subtypeof Any;
+protected
+  DAE.Exp e_1,e_2,e,e2,e3,e_3;
+  list<DAE.Exp> expl1,expl2;
+  DAE.ComponentRef cr_1,cr;
+  list<DAE.Statement> stmts,stmts1,stmts2;
+  DAE.Type tp;
+  DAE.Statement ew,ew_1;
+  Boolean b1;
+  String id1,str;
+  DAE.ElementSource source;
+  DAE.Else algElse;
+  list<tuple<DAE.ComponentRef,SourceInfo>> loopPrlVars "list of parallel variables used/referenced in the parfor loop";
+  list<DAE.ComponentRef> conditions;
+  Boolean initialCall;
 algorithm
-  (outStmts,oextraArg) := matchcontinue(inStmts,func,iextraArg)
-    local
-      DAE.Exp e_1,e_2,e,e2,e3,e_3;
-      list<DAE.Exp> expl1,expl2;
-      DAE.ComponentRef cr_1,cr;
-      list<DAE.Statement> xs_1,xs,stmts,stmts1,stmts2;
-      DAE.Type tp;
-      DAE.Statement x,ew,ew_1;
-      Boolean b1;
-      String id1,str;
-      Integer ix;
-      DAE.ElementSource source;
-      DAE.Else algElse;
-      Type_a extraArg;
-      list<tuple<DAE.ComponentRef,SourceInfo>> loopPrlVars "list of parallel variables used/referenced in the parfor loop";
-      list<DAE.ComponentRef> conditions;
-      Boolean initialCall;
+  for stmt in inStmts loop
+    outStmts := matchcontinue stmt
+      case DAE.STMT_ASSIGN(type_ = tp,exp1 = e2,exp = e, source = source)
+        equation
+          (e_1, extraArg) = func(e, stmt, extraArg);
+          (e_2, extraArg) = func(e2, stmt, extraArg);
+        then
+          if referenceEq(e,e_1) and referenceEq(e2,e_2) then stmt :: outStmts else DAE.STMT_ASSIGN(tp,e_2,e_1,source)::outStmts;
 
-    case ({},_,extraArg) then ({},extraArg);
+      case DAE.STMT_TUPLE_ASSIGN(type_ = tp,expExpLst = expl1, exp = e, source = source)
+        equation
+          (e_1, extraArg) = func(e, stmt,  extraArg);
+          (expl2, extraArg) = traverseDAEExpListStmt(expl1,func, stmt, extraArg);
+        then
+          if referenceEq(e,e_1) and referenceEq(expl2,expl1) then stmt :: outStmts else DAE.STMT_TUPLE_ASSIGN(tp,expl2,e_1,source)::outStmts;
 
-    case (((x as DAE.STMT_ASSIGN(type_ = tp,exp1 = e2,exp = e, source = source))::xs),_,extraArg)
-      equation
-        (e_1, extraArg) = func(e, x, extraArg);
-        (e_2, extraArg) = func(e2, x, extraArg);
-        (xs_1,extraArg) = traverseDAEStmts(xs, func, extraArg);
-        outStmts = if referenceEq(e,e_1) and referenceEq(e2,e_2) and referenceEq(xs,xs_1) then inStmts else DAE.STMT_ASSIGN(tp,e_2,e_1,source)::xs_1;
-      then (outStmts,extraArg);
+      case DAE.STMT_ASSIGN_ARR(type_ = tp, lhs=e, exp = e2, source = source)
+        algorithm
+          (e_2, extraArg) := func(e2, stmt,  extraArg);
+          try
+            (e_1 as DAE.CREF(_,_), extraArg) := func(e,  stmt, extraArg);
+          else
+            // We need to pass this through because simplify/etc may scalarize the cref...
+            e_1 := e;
+          end try;
+        then
+          if referenceEq(e,e_1) and referenceEq(e2,e_2) then stmt :: outStmts else DAE.STMT_ASSIGN_ARR(tp,e_1,e_2,source)::outStmts;
 
-    case (((x as DAE.STMT_TUPLE_ASSIGN(type_ = tp,expExpLst = expl1, exp = e, source = source))::xs),_,extraArg)
-      equation
-        (e_1, extraArg) = func(e, x,  extraArg);
-        (expl2, extraArg) = traverseDAEExpListStmt(expl1,func, x, extraArg);
-        (xs_1, extraArg) = traverseDAEStmts(xs, func, extraArg);
-        outStmts = if referenceEq(e,e_1) and referenceEq(expl2,expl1) and referenceEq(xs,xs_1) then inStmts else DAE.STMT_TUPLE_ASSIGN(tp,expl2,e_1,source)::xs_1;
-      then (outStmts,extraArg);
+      case DAE.STMT_IF(exp=e,statementLst=stmts,else_ = algElse, source = source)
+        equation
+          (algElse,extraArg) = traverseDAEStmtsElse(algElse,func, stmt, extraArg);
+          (stmts2,extraArg) = traverseDAEStmts(stmts,func,extraArg);
+          (e_1,extraArg) = func(e, stmt, extraArg);
+          (stmts1,_) = Algorithm.optimizeIf(e_1,stmts2,algElse,source);
+        then
+          List.append_reverse(stmts1, outStmts);
 
-    case (((x as DAE.STMT_ASSIGN_ARR(type_ = tp, lhs=e, exp = e2, source = source))::xs),_,extraArg)
-      algorithm
-        (e_2, extraArg) := func(e2, x,  extraArg);
-        try
-          (e_1 as DAE.CREF(_,_), extraArg) := func(e,  x, extraArg);
-        else
-          // We need to pass this through because simplify/etc may scalarize the cref...
-          e_1 := e;
-        end try;
-        (xs_1, extraArg) := traverseDAEStmts(xs, func, extraArg);
-        outStmts := if referenceEq(e,e_1) and referenceEq(e2,e_2) and referenceEq(xs,xs_1) then inStmts else DAE.STMT_ASSIGN_ARR(tp,e_1,e_2,source)::xs_1;
-      then (outStmts,extraArg);
+      case DAE.STMT_FOR(type_=tp,iterIsArray=b1,iter=id1,range=e,statementLst=stmts, source = source)
+        equation
+          (stmts2, extraArg) = traverseDAEStmts(stmts,func,extraArg);
+          (e_1, extraArg) = func(e, stmt, extraArg);
+        then
+          if referenceEq(e,e_1) and referenceEq(stmts,stmts2) then stmt :: outStmts else DAE.STMT_FOR(tp,b1,id1,e_1,stmts2,source)::outStmts;
 
-    case (((x as DAE.STMT_IF(exp=e,statementLst=stmts,else_ = algElse, source = source))::xs),_,extraArg)
-      equation
-        (algElse,extraArg) = traverseDAEStmtsElse(algElse,func, x, extraArg);
-        (stmts2,extraArg) = traverseDAEStmts(stmts,func,extraArg);
-        (e_1,extraArg) = func(e, x, extraArg);
-        (xs_1,extraArg) = traverseDAEStmts(xs, func, extraArg);
-        (stmts1,_) = Algorithm.optimizeIf(e_1,stmts2,algElse,source);
-      then (listAppend(stmts1, xs_1),extraArg);
+      case DAE.STMT_PARFOR(type_=tp,iterIsArray=b1,iter=id1,range=e,statementLst=stmts, loopPrlVars=loopPrlVars, source = source)
+        equation
+          (stmts2, extraArg) = traverseDAEStmts(stmts,func,extraArg);
+          (e_1, extraArg) = func(e, stmt, extraArg);
+        then
+          DAE.STMT_PARFOR(tp,b1,id1,e_1,stmts2,loopPrlVars,source)::outStmts;
 
-    case (((x as DAE.STMT_FOR(type_=tp,iterIsArray=b1,iter=id1,index=ix,range=e,statementLst=stmts, source = source))::xs),_,extraArg)
-      equation
-        (stmts2, extraArg) = traverseDAEStmts(stmts,func,extraArg);
-        (e_1, extraArg) = func(e, x, extraArg);
-        (xs_1, extraArg) = traverseDAEStmts(xs, func, extraArg);
-        outStmts = if referenceEq(e,e_1) and referenceEq(stmts,stmts2) and referenceEq(xs,xs_1) then inStmts else DAE.STMT_FOR(tp,b1,id1,ix,e_1,stmts2,source)::xs_1;
-      then (outStmts,extraArg);
+      case DAE.STMT_WHILE(exp = e,statementLst=stmts, source = source)
+        equation
+          (stmts2, extraArg) = traverseDAEStmts(stmts,func,extraArg);
+          (e_1, extraArg) = func(e, stmt, extraArg);
+        then
+          if referenceEq(e,e_1) and referenceEq(stmts,stmts2) then stmt :: outStmts else DAE.STMT_WHILE(e_1,stmts2,source)::outStmts;
 
-    case (((x as DAE.STMT_PARFOR(type_=tp,iterIsArray=b1,iter=id1,index=ix,range=e,statementLst=stmts, loopPrlVars=loopPrlVars, source = source))::xs),_,extraArg)
-      equation
-        (stmts2, extraArg) = traverseDAEStmts(stmts,func,extraArg);
-        (e_1, extraArg) = func(e, x, extraArg);
-        (xs_1, extraArg) = traverseDAEStmts(xs, func, extraArg);
-      then (DAE.STMT_PARFOR(tp,b1,id1,ix,e_1,stmts2,loopPrlVars,source)::xs_1,extraArg);
+      case DAE.STMT_WHEN(exp=e,conditions=conditions,initialCall=initialCall,statementLst=stmts,elseWhen=NONE(),source=source)
+        equation
+          (stmts2, extraArg) = traverseDAEStmts(stmts,func,extraArg);
+          (e_1, extraArg) = func(e, stmt, extraArg);
+        then
+          DAE.STMT_WHEN(e_1,conditions,initialCall,stmts2,NONE(),source)::outStmts;
 
-    case (((x as DAE.STMT_WHILE(exp = e,statementLst=stmts, source = source))::xs),_,extraArg)
-      equation
-        (stmts2, extraArg) = traverseDAEStmts(stmts,func,extraArg);
-        (e_1, extraArg) = func(e, x, extraArg);
-        (xs_1, extraArg) = traverseDAEStmts(xs, func, extraArg);
-        outStmts = if referenceEq(e,e_1) and referenceEq(stmts,stmts2) and referenceEq(xs,xs_1) then inStmts else DAE.STMT_WHILE(e_1,stmts2,source)::xs_1;
-      then (outStmts,extraArg);
+      case DAE.STMT_WHEN(exp=e,conditions=conditions,initialCall=initialCall,statementLst=stmts,elseWhen=SOME(ew),source=source)
+        equation
+          ({_}, extraArg) = traverseDAEStmts({ew},func,extraArg);
+          (stmts2, extraArg) = traverseDAEStmts(stmts,func,extraArg);
+          (e_1, extraArg) = func(e, stmt, extraArg);
+        then
+          DAE.STMT_WHEN(e_1,conditions,initialCall,stmts2,SOME(ew),source)::outStmts;
 
-    case (((x as DAE.STMT_WHEN(exp=e,conditions=conditions,initialCall=initialCall,statementLst=stmts,elseWhen=NONE(),source=source))::xs),_,extraArg)
-      equation
-        (stmts2, extraArg) = traverseDAEStmts(stmts,func,extraArg);
-        (e_1, extraArg) = func(e, x, extraArg);
-        (xs_1, extraArg) = traverseDAEStmts(xs, func, extraArg);
-      then (DAE.STMT_WHEN(e_1,conditions,initialCall,stmts2,NONE(),source)::xs_1,extraArg);
+      case DAE.STMT_ASSERT(cond = e, msg=e2, level=e3, source = source)
+        equation
+          (e_1, extraArg) = func(e, stmt, extraArg);
+          (e_2, extraArg) = func(e2, stmt, extraArg);
+          (e_3, extraArg) = func(e3, stmt, extraArg);
+        then
+          if referenceEq(e,e_1) and referenceEq(e2,e_2) and referenceEq(e3,e_3) then stmt :: outStmts else DAE.STMT_ASSERT(e_1,e_2,e_3,source)::outStmts;
 
-    case (((x as DAE.STMT_WHEN(exp=e,conditions=conditions,initialCall=initialCall,statementLst=stmts,elseWhen=SOME(ew),source=source))::xs),_,extraArg)
-      equation
-        ({_}, extraArg) = traverseDAEStmts({ew},func,extraArg);
-        (stmts2, extraArg) = traverseDAEStmts(stmts,func,extraArg);
-        (e_1, extraArg) = func(e, x, extraArg);
-        (xs_1, extraArg) = traverseDAEStmts(xs, func, extraArg);
-      then (DAE.STMT_WHEN(e_1,conditions,initialCall,stmts2,SOME(ew),source)::xs_1,extraArg);
+      case DAE.STMT_TERMINATE(msg = e, source = source)
+        equation
+          (e_1, extraArg) = func(e, stmt, extraArg);
+        then
+          if referenceEq(e,e_1) then stmt :: outStmts else DAE.STMT_TERMINATE(e_1,source)::outStmts;
 
-    case (((x as DAE.STMT_ASSERT(cond = e, msg=e2, level=e3, source = source))::xs),_,extraArg)
-      equation
-        (e_1, extraArg) = func(e, x, extraArg);
-        (e_2, extraArg) = func(e2, x, extraArg);
-        (e_3, extraArg) = func(e3, x, extraArg);
-        (xs_1, extraArg) = traverseDAEStmts(xs, func, extraArg);
-        outStmts = if referenceEq(e,e_1) and referenceEq(e2,e_2) and referenceEq(e3,e_3) and referenceEq(xs,xs_1) then inStmts else DAE.STMT_ASSERT(e_1,e_2,e_3,source)::xs_1;
-      then (outStmts,extraArg);
+      case DAE.STMT_REINIT(var = e,value=e2, source = source)
+        equation
+          (e_1, extraArg) = func(e, stmt, extraArg);
+          (e_2, extraArg) = func(e2, stmt, extraArg);
+        then
+          if referenceEq(e,e_1) and referenceEq(e2,e_2) then stmt :: outStmts else DAE.STMT_REINIT(e_1,e_2,source)::outStmts;
 
-    case (((x as DAE.STMT_TERMINATE(msg = e, source = source))::xs),_,extraArg)
-      equation
-        (e_1, extraArg) = func(e, x, extraArg);
-        (xs_1, extraArg) = traverseDAEStmts(xs, func, extraArg);
-        outStmts = if referenceEq(e,e_1) and referenceEq(xs,xs_1) then inStmts else DAE.STMT_TERMINATE(e_1,source)::xs_1;
-      then (outStmts,extraArg);
+      case DAE.STMT_NORETCALL(exp = e, source = source)
+        equation
+          (e_1, extraArg) = func(e, stmt, extraArg);
+        then
+          if referenceEq(e,e_1) then stmt :: outStmts else DAE.STMT_NORETCALL(e_1,source)::outStmts;
 
-    case (((x as DAE.STMT_REINIT(var = e,value=e2, source = source))::xs),_,extraArg)
-      equation
-        (e_1, extraArg) = func(e, x, extraArg);
-        (e_2, extraArg) = func(e2, x, extraArg);
-        (xs_1, extraArg) = traverseDAEStmts(xs, func, extraArg);
-        outStmts = if referenceEq(e,e_1) and referenceEq(e2,e_2) and referenceEq(xs,xs_1) then inStmts else DAE.STMT_REINIT(e_1,e_2,source)::xs_1;
-      then (outStmts,extraArg);
+      case DAE.STMT_RETURN()
+        equation
+          (, extraArg) = func(DAE.ICONST(-1), stmt, extraArg); // Dummy argument, so we can traverse over statements without expressions
+        then
+          stmt::outStmts;
 
-    case (((x as DAE.STMT_NORETCALL(exp = e, source = source))::xs),_,extraArg)
-      equation
-        (e_1, extraArg) = func(e, x, extraArg);
-        (xs_1, extraArg) = traverseDAEStmts(xs, func, extraArg);
-        outStmts = if referenceEq(e,e_1) and referenceEq(xs,xs_1) then inStmts else DAE.STMT_NORETCALL(e_1,source)::xs_1;
-      then (outStmts,extraArg);
+      case DAE.STMT_BREAK()
+        equation
+          (, extraArg) = func(DAE.ICONST(-1), stmt, extraArg); // Dummy argument, so we can traverse over statements without expressions
+        then
+          stmt::outStmts;
 
-    case (((x as DAE.STMT_RETURN())::xs),_,extraArg)
-      equation
-        (xs_1, extraArg) = traverseDAEStmts(xs, func, extraArg);
-        (, extraArg) = func(DAE.ICONST(-1), x, extraArg); // Dummy argument, so we can traverse over statements without expressions
-      then (if referenceEq(xs,xs_1) then inStmts else x::xs_1,extraArg);
+      case DAE.STMT_CONTINUE()
+        equation
+          (, extraArg) = func(DAE.ICONST(-1), stmt, extraArg); // Dummy argument, so we can traverse over statements without expressions
+        then
+          stmt::outStmts;
 
-    case (((x as DAE.STMT_BREAK())::xs),_,extraArg)
-      equation
-        (xs_1, extraArg) = traverseDAEStmts(xs, func, extraArg);
-        (, extraArg) = func(DAE.ICONST(-1), x, extraArg); // Dummy argument, so we can traverse over statements without expressions
-      then (if referenceEq(xs,xs_1) then inStmts else x::xs_1,extraArg);
+      // MetaModelica extension. KS
+      case DAE.STMT_FAILURE(body=stmts, source = source)
+        equation
+          (stmts2, extraArg) = traverseDAEStmts(stmts,func,extraArg);
+        then
+          if referenceEq(stmts,stmts2) then stmt :: outStmts else DAE.STMT_FAILURE(stmts2,source)::outStmts;
 
-    case (((x as DAE.STMT_CONTINUE())::xs),_,extraArg)
-      equation
-        (xs_1, extraArg) = traverseDAEStmts(xs, func, extraArg);
-        (, extraArg) = func(DAE.ICONST(-1), x, extraArg); // Dummy argument, so we can traverse over statements without expressions
-      then (if referenceEq(xs,xs_1) then inStmts else x::xs_1,extraArg);
+      else
+        equation
+          str = DAEDump.ppStatementStr(stmt);
+          str = "DAEUtil.traverseDAEStmts not implemented correctly: " + str;
+          Error.addMessage(Error.INTERNAL_ERROR, {str});
+        then fail();
+      end matchcontinue;
+  end for;
 
-    // MetaModelica extension. KS
-    case (((DAE.STMT_FAILURE(body=stmts, source = source))::xs),_,extraArg)
-      equation
-        (stmts2, extraArg) = traverseDAEStmts(stmts,func,extraArg);
-        (xs_1, extraArg) = traverseDAEStmts(xs, func, extraArg);
-        outStmts = if referenceEq(stmts,stmts2) and referenceEq(xs,xs_1) then inStmts else DAE.STMT_FAILURE(stmts2,source)::xs_1;
-      then (outStmts,extraArg);
-
-    case ((x::_),_,_)
-      equation
-        str = DAEDump.ppStatementStr(x);
-        str = "DAEUtil.traverseDAEStmts not implemented correctly: " + str;
-        Error.addMessage(Error.INTERNAL_ERROR, {str});
-      then fail();
-  end matchcontinue;
+  outStmts := listReverseInPlace(outStmts);
 end traverseDAEStmts;
 
 protected function traverseDAEStmtsElse "Helper function for traverseDAEEquationsStmts"
@@ -5114,6 +5150,22 @@ algorithm
   end match;
 end convertInlineTypeToBool;
 
+public function inlineTypeEqual
+  input DAE.InlineType it1;
+  input DAE.InlineType it2;
+  output Boolean b;
+algorithm
+  b := match (it1, it2)
+    case (DAE.NORM_INLINE(), DAE.NORM_INLINE()) then true;
+    case (DAE.BUILTIN_EARLY_INLINE(), DAE.BUILTIN_EARLY_INLINE()) then true;
+    case (DAE.EARLY_INLINE(), DAE.EARLY_INLINE()) then true;
+    case (DAE.DEFAULT_INLINE(), DAE.DEFAULT_INLINE()) then true;
+    case (DAE.NO_INLINE(), DAE.NO_INLINE()) then true;
+    case (DAE.AFTER_INDEX_RED_INLINE(), DAE.AFTER_INDEX_RED_INLINE()) then true;
+    else false;
+  end match;
+end inlineTypeEqual;
+
 public function daeElements "Retrieve the elements from a DAEList"
   input DAE.DAElist dae;
   output list<DAE.Element> elts;
@@ -5193,6 +5245,8 @@ algorithm
       case DAE.INITIALDEFINE()
         algorithm initialEquations := e :: initialEquations; then ();
       case DAE.INITIAL_IF_EQUATION()
+        algorithm initialEquations := e :: initialEquations; then ();
+      case DAE.INITIAL_FOR_EQUATION()
         algorithm initialEquations := e :: initialEquations; then ();
       case DAE.INITIAL_ASSERT()
         algorithm initialEquations := e :: initialEquations; then ();
@@ -5578,10 +5632,10 @@ public function printBindingSourceStr "prints a binding source as a string"
   output String str;
 algorithm
   str := match(bindingSource)
-    local
-    case(DAE.BINDING_FROM_DEFAULT_VALUE()) then "[DEFAULT VALUE]";
-    case(DAE.BINDING_FROM_DEFAULT_VALUE()) then "[RECORD SUBMOD]";
-    case(DAE.BINDING_FROM_START_VALUE()) then  "[START VALUE]";
+    case(DAE.BINDING_FROM_DEFAULT_VALUE())       then "[DEFAULT VALUE]";
+    case(DAE.BINDING_FROM_START_VALUE())         then "[START VALUE]";
+    case(DAE.BINDING_FROM_RECORD_SUBMODS())      then "[RECORD SUBMODS]";
+    case(DAE.BINDING_FROM_DERIVED_RECORD_DECL()) then "[DERIVED RECORD]";
   end match;
 end printBindingSourceStr;
 

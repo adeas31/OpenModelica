@@ -91,6 +91,8 @@ typedef void (*PlotCallback)(void*, int externalWindow, const char* filename, co
     const char* curveWidth, const char* curveStyle, const char* legendPosition, const char* footer, const char* autoScale,
     const char* variables);
 
+typedef void (*LoadModelCallback)(void*, const char* modelname);
+
 /* Thread-specific data passed around in most functions.
  * It is also possible to fetch it using pthread_getspecific (mostly for external functions that were not passed the pointer) */
 enum {
@@ -138,6 +140,8 @@ typedef struct threadData_s {
 #endif
   void *plotClassPointer;
   PlotCallback plotCB;
+  void *loadModelClassPointer;
+  LoadModelCallback loadModelCB;
   int lastEquationSolved;
   void *stackBottom; /* Actually offset 64 kB from bottom, just to never reach the bottom */
 } threadData_t;
@@ -171,8 +175,8 @@ static inline void* mmc_check_out_of_memory(void *ptr)
 #define GC_free                           omc_alloc_interface_pooled.free_uncollectable
 #define nofree                            omc_alloc_interface_pooled.free_string_persist
 #define GC_malloc_atomic_ignore_off_page  omc_alloc_interface_pooled.malloc_atomic
-#define GC_register_displacement          /* nothing */
-#define GC_set_force_unmap_on_gcollect    /* nothing */
+#define GC_register_displacement(X)       /* nothing */
+#define GC_set_force_unmap_on_gcollect(X) /* nothing */
 #define omc_GC_set_max_heap_size(X)       /* nothing */
 #define omc_GC_get_max_heap_size()        0
 #endif

@@ -350,13 +350,13 @@ bool OMSProxy::addBus(QString cref)
  * \param crefB
  * \return
  */
-bool OMSProxy::addConnection(QString crefA, QString crefB)
+bool OMSProxy::addConnection(QString crefA, QString crefB, bool suppressUnitConversion)
 {
   QString command = "oms_addConnection";
   QStringList args;
-  args << "\"" + crefA + "\"" << "\"" + crefB + "\"";
+  args << "\"" + crefA + "\"" << "\"" + crefB + "\"" << (suppressUnitConversion ? "true" : "false");
   LOG_COMMAND(command, args);
-  oms_status_enu_t status = oms_addConnection(crefA.toUtf8().constData(), crefB.toUtf8().constData());
+  oms_status_enu_t status = oms_addConnection(crefA.toUtf8().constData(), crefB.toUtf8().constData(), suppressUnitConversion);
   logResponse(command, status, &commandTime);
   return statusToBool(status);
 }
@@ -435,6 +435,50 @@ bool OMSProxy::addSubModel(QString cref, QString fmuPath)
   oms_status_enu_t status = oms_addSubModel(cref.toUtf8().constData(), fmuPath.toUtf8().constData());
   logResponse(command, status, &commandTime);
   return statusToBool(status);
+}
+
+/*!
+ * \brief OMSProxy::replaceSubModel
+ * \Adds the submodel to the system
+ * \param cref
+ * \param fmupath
+ * \param dryCount
+ * \param count
+ * \return
+ */
+bool OMSProxy::replaceSubModel(QString cref, QString fmuPath, bool dryCount, int *count)
+{
+  QString command = "oms_replaceSubModel";
+  QStringList args;
+  args << "\"" + cref + "\"" << fmuPath << QString::number(dryCount);
+  LOG_COMMAND(command, args);
+  oms_status_enu_t status = oms_replaceSubModel(cref.toUtf8().constData(), fmuPath.toUtf8().constData(), dryCount, count);
+  logResponse(command, status, &commandTime);
+  return statusToBool(status);
+}
+
+/*!
+ * \brief OMSProxy::createElementGeometryUsingPosition
+ * Creates the element geometry using position.
+ * \param cref
+ * \param position
+ */
+void OMSProxy::createElementGeometryUsingPosition(const QString &cref, QPointF position)
+{
+  qreal x = position.x();
+  qreal y = position.y();
+
+  ssd_element_geometry_t elementGeometry;
+  elementGeometry.x1 = x - 10.0;
+  elementGeometry.y1 = y - 10.0;
+  elementGeometry.x2 = x + 10.0;
+  elementGeometry.y2 = y + 10.0;
+  elementGeometry.rotation = 0.0;
+  elementGeometry.iconSource = NULL;
+  elementGeometry.iconRotation = 0.0;
+  elementGeometry.iconFlip = false;
+  elementGeometry.iconFixedAspectRatio = false;
+  setElementGeometry(cref, &elementGeometry);
 }
 
 bool OMSProxy::addExternalTLMModel(QString cref, QString startScript, QString modelPath)

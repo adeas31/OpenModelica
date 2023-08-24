@@ -70,7 +70,6 @@ protected import Types;
 protected import PrefixUtil;
 protected import List;
 protected import ComponentReference;
-protected import NFInstUtil;
 protected import UnitAbsynBuilder;
 protected import Flags;
 protected import Expression;
@@ -358,7 +357,7 @@ algorithm
         // print(if_(impl, "impl crap\n", "no impl\n"));
         if not (impl and listMember(pre, {DAE.NOPRE()})) and not Config.getGraphicsExpMode() then
           s1 = ComponentReference.printComponentRefStr(crefOuter);
-          s2 = Dump.unparseInnerouterStr(io);
+          s2 = AbsynUtil.innerOuterStr(io);
           s3 = InnerOuter.getExistingInnerDeclarations(ih, componentDefinitionParentEnv);
           s1 = AbsynUtil.pathString(typePath) + " " + s1;
           Error.addSourceMessage(Error.MISSING_INNER_PREFIX,{s1, s2, s3}, info);
@@ -392,7 +391,7 @@ algorithm
         // adrpo: do NOT! display an error message if impl = true and prefix is DAE.NOPRE()
         if not (impl and listMember(pre, {DAE.NOPRE()})) and not Config.getGraphicsExpMode() then
           s1 = ComponentReference.printComponentRefStr(crefOuter);
-          s2 = Dump.unparseInnerouterStr(io);
+          s2 = AbsynUtil.innerOuterStr(io);
           s3 = InnerOuter.getExistingInnerDeclarations(ih,componentDefinitionParentEnv);
           s1 = AbsynUtil.pathString(typePath) + " " + s1;
           Error.addSourceMessage(Error.MISSING_INNER_PREFIX,{s1, s2, s3}, info);
@@ -599,7 +598,7 @@ algorithm
 
     source := ElementSource.createElementSource(inInfo, FGraph.getScopePath(inEnv), inPrefix);
     (outCache, outDae) := addArrayVarEquation(outCache, inEnv, outIH, inState,
-      outDae, outType, mod, NFInstUtil.toConst(SCodeUtil.attrVariability(attr)),
+      outDae, outType, mod, Types.variabilityToConst(SCodeUtil.attrVariability(attr)),
       inPrefix, inName, source);
     outCache := InstFunction.addRecordConstructorFunction(outCache, inEnv,
       Types.arrayElementType(outType), SCodeUtil.elementInfo(inClass));
@@ -1163,7 +1162,7 @@ algorithm
         mod = if not listEmpty(inSubscripts) and not SCodeUtil.isParameterOrConst(vt) and not ClassInf.isFunctionOrRecord(inState) and not Types.isComplexType(Types.arrayElementType(ty)) and not Types.isExternalObject(Types.arrayElementType(ty)) and not Config.scalarizeBindings()
                  then DAE.NOMOD()
                  else inMod;
-        opt_binding = InstBinding.makeVariableBinding(ty, mod, NFInstUtil.toConst(vt), inPrefix, inName);
+        opt_binding = InstBinding.makeVariableBinding(ty, mod, Types.variabilityToConst(vt), inPrefix, inName);
         start = InstBinding.instStartBindingExp(inMod /* Yup, let's keep the start-binding. It seems sane. */, ty, vt);
         // Propagate the final prefix from the modifier.
         //fin = InstUtil.propagateModFinal(mod, fin);

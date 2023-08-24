@@ -1,0 +1,161 @@
+// name: examplary
+// keywords: NewBackend
+// status: correct
+
+// from OpenModelica Workshop Presentation 2022 by kabdelhak
+// used for extreme scaling purposes with slicing, only scaled one is tested
+
+loadString("
+model exemplary
+  Real x[5,2];
+  Real y[2];
+equation
+  for i in 1:4, j in 1:2 loop
+    x[i+1,j] = x[i,j] - y[j];
+  end for;
+  for j in 1:2 loop
+	y[j] = j*sin(time);
+    x[3,j] = j*cos(time);
+  end for;
+end exemplary;
+
+model exemplaryS
+  parameter Integer s = 20;
+  Real x[5+s,2+s];
+  Real y[2+s];
+equation
+  for i in 1:4+s, j in 1:2+s loop
+    x[i+1,j] = x[i,j] - y[j];
+  end for;
+  for j in 1:2+s loop
+    y[j] = j*sin(time);
+    x[3,j] = j*cos(time);
+  end for;
+end exemplaryS;
+
+"); getErrorString();
+
+setCommandLineOptions("--newBackend -d=dumpSlice");
+simulate(exemplaryS); getErrorString();
+val(x[2,1],1);
+val(x[4,2],1);
+
+// Result:
+// true
+// ""
+// true
+// [dumpSlice] The block:
+// BLOCK: Sliced Component (status = Solve.UNPROCESSED)
+// ----------------------------------------
+// ### Variable:
+// 	y[j]
+// ### Equation:
+// 	[FOR-] (22) ($RES_SIM_0)
+// 	[----] for j in 1:22 loop
+// 	[----]   [SCAL] (1) y[j] = j * sin(time) ($RES_SIM_1)
+// 	[----] end for;
+// 	 slice: {21, 20, 19, 18, 17, 16, 15, 14, 13, 12, ...}
+//
+// [dumpSlice] got sliced to:
+// --- Alias of INI[1 | 1] ---
+// BLOCK: Generic Component (status = Solve.EXPLICIT)
+// ----------------------------------------
+// ### Variable:
+// 	y[j]
+// ### Equation:
+// 	[FOR-] (22) ($RES_SIM_0)
+// 	[----] for j in 1:22 loop
+// 	[----]   [SCAL] (1) y[j] = j * sin(time) ($RES_SIM_1)
+// 	[----] end for;
+// 	 slice: {21, 20, 19, 18, 17, 16, 15, 14, 13, 12, ...}
+//
+//
+// [dumpSlice] The block:
+// BLOCK: Sliced Component (status = Solve.UNPROCESSED)
+// ----------------------------------------
+// ### Variable:
+// 	x[3, j]
+// ### Equation:
+// 	[FOR-] (22) ($RES_SIM_2)
+// 	[----] for j in 1:22 loop
+// 	[----]   [SCAL] (1) x[3, j] = j * cos(time) ($RES_SIM_3)
+// 	[----] end for;
+// 	 slice: {21, 20, 19, 18, 17, 16, 15, 14, 13, 12, ...}
+//
+// [dumpSlice] got sliced to:
+// --- Alias of INI[1 | 2] ---
+// BLOCK: Generic Component (status = Solve.EXPLICIT)
+// ----------------------------------------
+// ### Variable:
+// 	x[3, j]
+// ### Equation:
+// 	[FOR-] (22) ($RES_SIM_2)
+// 	[----] for j in 1:22 loop
+// 	[----]   [SCAL] (1) x[3, j] = j * cos(time) ($RES_SIM_3)
+// 	[----] end for;
+// 	 slice: {21, 20, 19, 18, 17, 16, 15, 14, 13, 12, ...}
+//
+//
+// [dumpSlice] The block:
+// BLOCK: Sliced Component (status = Solve.UNPROCESSED)
+// ----------------------------------------
+// ### Variable:
+// 	x[i, j]
+// ### Equation:
+// 	[FOR-] (528) ($RES_SIM_4)
+// 	[----] for {i in 1:24, j in 1:22} loop
+// 	[----]   [SCAL] (1) x[i + 1, j] = x[i, j] - y[j] ($RES_SIM_5)
+// 	[----] end for;
+// 	 slice: {21, 43, 20, 42, 19, 41, 18, 40, 17, 39, ...}
+//
+// [dumpSlice] got sliced to:
+// --- Alias of INI[1 | 3] ---
+// BLOCK: Generic Component (status = Solve.EXPLICIT)
+// ----------------------------------------
+// ### Variable:
+// 	x[i, j]
+// ### Equation:
+// 	[FOR-] (528) ($RES_SIM_4)
+// 	[----] for {i in 1:24, j in 1:22} loop
+// 	[----]   [SCAL] (1) x[i, j] = -(-(x[1 + i, j] + y[j])) ($RES_SIM_5)
+// 	[----] end for;
+// 	 slice: {21, 43, 20, 42, 19, 41, 18, 40, 17, 39, ...}
+//
+//
+// [dumpSlice] The block:
+// BLOCK: Sliced Component (status = Solve.UNPROCESSED)
+// ----------------------------------------
+// ### Variable:
+// 	x[1 + i, j]
+// ### Equation:
+// 	[FOR-] (528) ($RES_SIM_4)
+// 	[----] for {i in 1:24, j in 1:22} loop
+// 	[----]   [SCAL] (1) x[i + 1, j] = x[i, j] - y[j] ($RES_SIM_5)
+// 	[----] end for;
+// 	 slice: {527, 505, 483, 461, 439, 417, 395, 373, 351, 329, ...}
+//
+// [dumpSlice] got sliced to:
+// --- Alias of INI[1 | 4] ---
+// BLOCK: Generic Component (status = Solve.EXPLICIT)
+// ----------------------------------------
+// ### Variable:
+// 	x[1 + i, j]
+// ### Equation:
+// 	[FOR-] (528) ($RES_SIM_4)
+// 	[----] for {i in 1:24, j in 1:22} loop
+// 	[----]   [SCAL] (1) x[1 + i, j] = x[i, j] - y[j] ($RES_SIM_5)
+// 	[----] end for;
+// 	 slice: {527, 505, 483, 461, 439, 417, 395, 373, 351, 329, ...}
+//
+//
+// record SimulationResult
+//     resultFile = "exemplaryS_res.mat",
+//     simulationOptions = "startTime = 0.0, stopTime = 1.0, numberOfIntervals = 500, tolerance = 1e-06, method = 'dassl', fileNamePrefix = 'exemplaryS', options = '', outputFormat = 'mat', variableFilter = '.*', cflags = '', simflags = ''",
+//     messages = "LOG_SUCCESS       | info    | The initialization finished successfully without homotopy method.
+// LOG_SUCCESS       | info    | The simulation finished successfully.
+// "
+// end SimulationResult;
+// ""
+// 19.35383265058162
+// 28.61001348346849
+// endResult

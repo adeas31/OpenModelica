@@ -154,7 +154,7 @@ algorithm
 
         if not Type.isEmptyArray(ty) then
           rhs := removeEmptyFunctionArguments(SimplifyExp.simplify(eq.rhs));
-          equations := Equation.ARRAY_EQUALITY(eq.lhs, rhs, ty, eq.source) :: equations;
+          equations := Equation.ARRAY_EQUALITY(eq.lhs, rhs, ty, eq.scope, eq.source) :: equations;
         end if;
       then
         equations;
@@ -164,19 +164,24 @@ algorithm
         body := simplifyEquations(eq.body);
 
         if not Equation.containsExpList(body, function Expression.containsIterator(iterator = eq.iterator)) then
+          // Remove the surrounding loop if the equations inside aren't using the iterator.
           equations := List.append_reverse(body, equations);
         else
-          // TODO: This causes issues with the -nfScalarize tests for some reason.
+          // TODO: This causes issues with the -nfScalarize tests for some
+          //       reason, which is the only case this applies to since we
+          //       normally unroll for loops and never get here.
           //dim := Type.nthDimension(Expression.typeOf(e), 1);
 
           //if Dimension.isOne(dim) then
+          //  // Unroll the loop if the iteration range consists of only one value.
           //  e := Expression.applySubscript(Subscript.INDEX(Expression.INTEGER(1)), e);
-
-          //  body := Equation.mapExpList(body,
-          //    function Expression.replaceIterator(iterator = eq.iterator, iteratorValue = e));
+          //  e := SimplifyExp.simplify(e);
+          //  body := Equation.replaceIteratorList(body, eq.iterator, e);
           //  body := simplifyEquations(body);
           //  equations := List.append_reverse(body, equations);
           //elseif not Dimension.isZero(dim) then
+          //if not Dimension.isZero(dim) then
+            // Otherwise just simplify if the iteration range is not empty.
             eq.range := SimplifyExp.simplifyOpt(eq.range);
             eq.body := body;
             equations := eq :: equations;
@@ -186,7 +191,7 @@ algorithm
         equations;
 
     case Equation.IF()
-      then simplifyIfEqBranches(eq.branches, eq.source, equations);
+      then simplifyIfEqBranches(eq.branches, eq.scope, eq.source, equations);
 
     case Equation.WHEN()
       algorithm
@@ -237,8 +242,9 @@ protected
   Expression lhs, rhs;
   Type ty;
   DAE.ElementSource src;
+  InstNode scope;
 algorithm
-  Equation.EQUALITY(lhs = lhs, rhs = rhs, ty = ty, source = src) := eq;
+  Equation.EQUALITY(lhs = lhs, rhs = rhs, ty = ty, scope = scope, source = src) := eq;
   ty := Type.mapDims(ty, simplifyDimension);
 
   if Type.isEmptyArray(ty) then
@@ -252,9 +258,10 @@ algorithm
 
   equations := match (lhs, rhs)
     case (Expression.TUPLE(), Expression.TUPLE())
-      then simplifyTupleElement(lhs.elements, rhs.elements, ty, src, Equation.makeEquality, equations);
+      then simplifyTupleElement(lhs.elements, rhs.elements, ty, src,
+        function Equation.makeEquality(scope = scope), equations);
 
-    else Equation.EQUALITY(lhs, rhs, ty, src) :: equations;
+    else Equation.EQUALITY(lhs, rhs, ty, scope, src) :: equations;
   end match;
 end simplifyEqualityEquation;
 
@@ -297,7 +304,6 @@ algorithm
   statements := match stmt
     local
       Expression e, lhs, rhs;
-      Type ty;
       Dimension dim;
       list<Statement> body;
 
@@ -305,17 +311,17 @@ algorithm
 
     case Statement.FOR(range = SOME(e))
       algorithm
-        ty := Expression.typeOf(e);
-        dim := Type.nthDimension(ty, 1);
+        dim := Type.nthDimension(Expression.typeOf(e), 1);
 
         //if Dimension.isOne(dim) then
+        //  // Unroll the loop if the iteration range consists of only one value.
         //  e := Expression.applySubscript(Subscript.INDEX(Expression.INTEGER(1)), e);
-        //  body := Statement.mapExpList(stmt.body,
-        //    function Expression.replaceIterator(iterator = stmt.iterator, iteratorValue = e));
+        //  body := Statement.replaceIteratorList(stmt.body, stmt.iterator, e);
         //  body := simplifyStatements(body);
         //  statements := listAppend(listReverse(body), statements);
         //elseif not Dimension.isZero(dim) then
         if not Dimension.isZero(dim) then
+          // Otherwise just simplify if the iteration range is not empty.
           stmt.range := SOME(SimplifyExp.simplify(e));
           stmt.body := simplifyStatements(stmt.body);
           statements := stmt :: statements;
@@ -460,6 +466,7 @@ end removeEmptyFunctionArguments;
 
 function simplifyIfEqBranches
   input list<Equation.Branch> branches;
+  input InstNode scope;
   input DAE.ElementSource src;
   input output list<Equation> elements;
 protected
@@ -485,7 +492,7 @@ algorithm
             else
               // Otherwise just discard the rest of the branches.
               accum := Equation.makeBranch(cond, simplifyEquations(body)) :: accum;
-              elements := Equation.makeIf(listReverseInPlace(accum), src) :: elements;
+              elements := Equation.makeIf(listReverseInPlace(accum), scope, src) :: elements;
               return;
             end if;
           elseif not Expression.isFalse(cond) then
@@ -515,7 +522,7 @@ algorithm
   end for;
 
   if not listEmpty(accum) then
-    elements := Equation.makeIf(listReverseInPlace(accum), src) :: elements;
+    elements := Equation.makeIf(listReverseInPlace(accum), scope, src) :: elements;
   end if;
 end simplifyIfEqBranches;
 
@@ -575,7 +582,7 @@ protected
 algorithm
   if not Function.isSimplified(func) then
     Function.markSimplified(func);
-    Function.mapExp(func, SimplifyExp.simplify, mapBody = false);
+    Function.mapExp(func, function SimplifyExp.simplify(backend = false), mapBody = false);
 
     cls := InstNode.getClass(func.node);
     () := match cls
@@ -606,6 +613,21 @@ algorithm
     end for;
   end if;
 end simplifyFunction;
+
+function combineBinaries
+  "author: kabdelhak 09-2020
+  Combines binaries for better handling in the backend.
+  NOTE: does not do any other simplification
+  e.g. BINARY(BINARY(2, /, y^2), *, BINARY(3, *, x))
+   --> MULTARY({2, 3, x}, {y^2}, *)"
+  input output FlatModel flatModel;
+algorithm
+  flatModel.variables := list(Variable.mapExp(var, SimplifyExp.combineBinaries) for var in flatModel.variables);
+  flatModel.equations := list(Equation.mapExp(eqn, SimplifyExp.combineBinaries) for eqn in flatModel.equations);
+  flatModel.initialEquations := list(Equation.mapExp(eqn, SimplifyExp.combineBinaries) for eqn in flatModel.initialEquations);
+  flatModel.algorithms := list(Algorithm.mapExp(alg, SimplifyExp.combineBinaries) for alg in flatModel.algorithms);
+  flatModel.initialAlgorithms := list(Algorithm.mapExp(alg, SimplifyExp.combineBinaries) for alg in flatModel.initialAlgorithms);
+end combineBinaries;
 
 annotation(__OpenModelica_Interface="frontend");
 end NFSimplifyModel;

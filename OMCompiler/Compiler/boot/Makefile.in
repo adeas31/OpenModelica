@@ -10,17 +10,17 @@ OMHOME=@OMBUILDDIR@
 OMBUILDDIR=@OMBUILDDIR@
 EXE_EXT=@EXE@
 EXE_SUFFIX=
-OMENCRYPTION=@OMENCRYPTION@
+OM_ENABLE_ENCRYPTION=@OM_ENABLE_ENCRYPTION@
 
 LIB_OMC=lib/@host_short@/omc
 
-ifeq ($(OMENCRYPTION),yes)
-OMENCRYPTIONLIBS=-L$(OMBUILDDIR)/lib/omc/SEMLA -ltool -lssl -lcrypto
+ifeq ($(OM_ENABLE_ENCRYPTION),yes)
+OMENCRYPTIONLIBS=../../../OMEncryption/3rdParty/SEMLA/build/libtool.a ../../../OMEncryption/3rdParty/SEMLA/build/openssl/lib/libcrypto.a ../../../OMEncryption/3rdParty/SEMLA/build/openssl/lib/libssl.a
 else
 OMENCRYPTIONLIBS=
 endif
 
-LDFLAGS=-L.  -L$(GEN_DIR) -L"$(OMHOME)/$(LIB_OMC)" $(LOMPARSE) $(LCOMPILERRUNTIME) -lOpenModelicaRuntimeC -lModelicaExternalC -lModelicaIO -lModelicaMatIO -lzlib -lomantlr3 $(CORBALIBS) $(FMILIB_OR_BOOT) @RT_LDFLAGS@ @LIBSOCKET@ @LIBLPSOLVE55@ @OMC_LIBS@ @GRAPHLIB@ @LD_LAPACK@ -lzmq $(OMENCRYPTIONLIBS)
+LDFLAGS=-L.  -L$(GEN_DIR) -L"$(OMHOME)/$(LIB_OMC)" $(LOMPARSE) $(LCOMPILERRUNTIME) -lOpenModelicaRuntimeC -lomantlr3 $(CORBALIBS) $(FMILIB_OR_BOOT) @RT_LDFLAGS@ @LIBSOCKET@ @OMC_LIBS@ @GRAPHLIB@ @LD_LAPACK@ -lzmq $(OMENCRYPTIONLIBS)
 LDFLAGS_SHARED_MAIN=-L"$(OMHOME)/$(LIB_OMC)" @RT_LDFLAGS_SHARED@
 ifeq (@WITH_FMIL@,yes)
 FMILIB = $(TOP_DIR)/3rdParty/FMIL/install/"$(LIB_OMC)"/libfmilib.a

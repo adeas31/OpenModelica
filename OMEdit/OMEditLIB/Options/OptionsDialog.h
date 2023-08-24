@@ -37,6 +37,7 @@
 
 #include "Util/Helper.h"
 #include "Util/Utilities.h"
+#include "Util/StringHandler.h"
 
 #include <QFontComboBox>
 #include <QStackedWidget>
@@ -141,6 +142,7 @@ public:
   void setUpDialog();
   void addListItems();
   void createPages();
+  void addPage(QWidget* pPage);
   GeneralSettingsPage* getGeneralSettingsPage() {return mpGeneralSettingsPage;}
   LibrariesPage* getLibrariesPage() {return mpLibrariesPage;}
   TextEditorPage* getTextEditorPage() {return mpTextEditorPage;}
@@ -167,6 +169,7 @@ public:
   void saveDialogGeometry();
   void show();
   TabSettings getTabSettings();
+  virtual bool eventFilter(QObject *pObject, QEvent *pEvent) override;
 signals:
   void textSettingsChanged();
   void modelicaEditorSettingsChanged();
@@ -177,7 +180,7 @@ signals:
   void HTMLEditorSettingsChanged();
 public slots:
   void changePage(QListWidgetItem *current, QListWidgetItem *previous);
-  void reject();
+  void reject() override;
   void saveSettings();
   void reset();
 private:
@@ -193,6 +196,15 @@ private:
   HTMLEditorPage *mpHTMLEditorPage;
   GraphicalViewsPage *mpGraphicalViewsPage;
   SimulationPage *mpSimulationPage;
+  QString mMatchingAlgorithm;
+  QString mIndexReductionMethod;
+  bool mInitialization;
+  bool mEvaluateAllParameters;
+  bool mNLSanalyticJacobian;
+  bool mParmodauto;
+  bool mOldInstantiation;
+  bool mEnableFMUImport;
+  QString mAdditionalTranslationFlags;
   MessagesPage *mpMessagesPage;
   NotificationsPage *mpNotificationsPage;
   LineStylePage *mpLineStylePage;
@@ -207,12 +219,39 @@ private:
   QSettings *mpSettings;
   QListWidget *mpOptionsList;
   QStackedWidget *mpPagesWidget;
-  QScrollArea *mpPagesWidgetScrollArea;
   Label *mpChangesEffectLabel;
   QPushButton *mpCancelButton;
   QPushButton *mpOkButton;
   QPushButton *mpResetButton;
   QDialogButtonBox *mpButtonBox;
+};
+
+class CodeColorsWidget : public QWidget
+{
+  Q_OBJECT
+public:
+  CodeColorsWidget(QWidget *pParent = 0);
+  QListWidget* getItemsListWidget() {return mpItemsListWidget;}
+  PreviewPlainTextEdit* getPreviewPlainTextEdit() {return mpPreviewPlainTextEdit;}
+private:
+  QGroupBox *mpColorsGroupBox;
+  Label *mpItemsLabel;
+  QListWidget *mpItemsListWidget;
+  Label *mpItemColorLabel;
+  QPushButton *mpItemColorPickButton;
+  Label *mpPreviewLabel;
+  PreviewPlainTextEdit *mpPreviewPlainTextEdit;
+  ListWidgetItem *mpTextItem;
+  ListWidgetItem *mpNumberItem;
+  ListWidgetItem *mpKeywordItem;
+  ListWidgetItem *mpTypeItem;
+  ListWidgetItem *mpFunctionItem;
+  ListWidgetItem *mpQuotesItem;
+  ListWidgetItem *mpCommentItem;
+signals:
+  void colorUpdated();
+private slots:
+  void pickColor();
 };
 
 class GeneralSettingsPage : public QWidget
@@ -227,7 +266,7 @@ public:
   GeneralSettingsPage(OptionsDialog *pOptionsDialog);
   QComboBox* getLanguageComboBox() {return mpLanguageComboBox;}
   void setWorkingDirectory(QString value) {mpWorkingDirectoryTextBox->setText(value);}
-  QString getWorkingDirectory() {return mpWorkingDirectoryTextBox->text();}
+  QString getWorkingDirectory();
   QSpinBox* getToolbarIconSizeSpinBox() {return mpToolbarIconSizeSpinBox;}
   void setPreserveUserCustomizations(bool value) {mpPreserveUserCustomizations->setChecked(value);}
   bool getPreserveUserCustomizations() {return mpPreserveUserCustomizations->isChecked();}
@@ -252,9 +291,7 @@ public:
   void setWelcomePageView(int view);
   QCheckBox* getShowLatestNewsCheckBox() {return mpShowLatestNewsCheckBox;}
   QSpinBox* getRecentFilesAndLatestNewsSizeSpinBox() {return mpRecentFilesAndLatestNewsSizeSpinBox;}
-  void setReplaceableSupport(bool value) {mpReplaceableSupport->setChecked(value);}
-  bool getReplaceableSupport() {return mpReplaceableSupport->isChecked();}
-  QCheckBox* getEnableNewInstantiationAPICheckBox() {return mpEnableNewInstantiationAPICheckBox;}
+  QCheckBox* getEnableInstanceAPICheckBox() {return mpEnableInstanceAPICheckBox;}
 private:
   OptionsDialog *mpOptionsDialog;
   QGroupBox *mpGeneralSettingsGroupBox;
@@ -294,8 +331,7 @@ private:
   QCheckBox *mpShowLatestNewsCheckBox;
   QSpinBox *mpRecentFilesAndLatestNewsSizeSpinBox;
   QGroupBox *mpOptionalFeaturesGroupBox;
-  QCheckBox *mpReplaceableSupport;
-  QCheckBox *mpEnableNewInstantiationAPICheckBox;
+  QCheckBox *mpEnableInstanceAPICheckBox;
 public slots:
   void selectWorkingDirectory();
   void selectTerminalCommand();
@@ -307,29 +343,31 @@ class LibrariesPage : public QWidget
   Q_OBJECT
 public:
   LibrariesPage(OptionsDialog *pOptionsDialog);
+  QLineEdit *getModelicaPathTextBox() const {return mpModelicaPathTextBox;}
+  QCheckBox *getLoadLatestModelicaCheckbox() const {return mpLoadLatestModelicaCheckbox;}
   QTreeWidget* getSystemLibrariesTree() {return mpSystemLibrariesTree;}
-  QCheckBox* getForceModelicaLoadCheckBox() {return mpForceModelicaLoadCheckBox;}
-  QCheckBox* getLoadOpenModelicaLibraryCheckBox() {return mpLoadOpenModelicaOnStartupCheckBox;}
   QTreeWidget* getUserLibrariesTree() {return mpUserLibrariesTree;}
   OptionsDialog *mpOptionsDialog;
 private:
   QGroupBox *mpSystemLibrariesGroupBox;
+  Label *mpModelicaPathLabel;
+  QLineEdit *mpModelicaPathTextBox;
+  QPushButton *mpModelicaPathBrowseButton;
   Label *mpSystemLibrariesNoteLabel;
+  QCheckBox *mpLoadLatestModelicaCheckbox;
   QTreeWidget *mpSystemLibrariesTree;
   QPushButton *mpAddSystemLibraryButton;
   QPushButton *mpRemoveSystemLibraryButton;
   QPushButton *mpEditSystemLibraryButton;
   QDialogButtonBox *mpSystemLibrariesButtonBox;
-  QCheckBox *mpForceModelicaLoadCheckBox;
-  QCheckBox *mpLoadOpenModelicaOnStartupCheckBox;
   QGroupBox *mpUserLibrariesGroupBox;
   QTreeWidget *mpUserLibrariesTree;
   QPushButton *mpAddUserLibraryButton;
   QPushButton *mpRemoveUserLibraryButton;
   QPushButton *mpEditUserLibraryButton;
   QDialogButtonBox *mpUserLibrariesButtonBox;
-  Label *mpModelicaPathLabel;
 private slots:
+  void selectModelicaPath();
   void openAddSystemLibrary();
   void removeSystemLibrary();
   void openEditSystemLibrary();
@@ -342,20 +380,27 @@ class AddSystemLibraryDialog : public QDialog
 {
   Q_OBJECT
 public:
-  AddSystemLibraryDialog(LibrariesPage *pLibrariesPage);
+  AddSystemLibraryDialog(LibrariesPage *pLibrariesPage, bool editFlag = false);
   bool nameExists(QTreeWidgetItem *pItem = 0);
-
+  QComboBox *getNameComboBox() const {return mpNameComboBox;}
+  QComboBox *getVersionsComboBox() const {return mpVersionsComboBox;}
+private:
   LibrariesPage *mpLibrariesPage;
   Label *mpNameLabel;
   QComboBox *mpNameComboBox;
   Label *mpValueLabel;
-  QLineEdit *mpVersionTextBox;
+  QComboBox *mpVersionsComboBox;
   QPushButton *mpOkButton;
   QPushButton *mpCancelButton;
+  QPushButton *mpInstallLibraryButton;
   QDialogButtonBox *mpButtonBox;
   bool mEditFlag;
+
+  void getSystemLibraries();
 private slots:
+  void getLibraryVersions(const QString &library);
   void addSystemLibrary();
+  void openInstallLibraryDialog();
 };
 
 class AddUserLibraryDialog : public QDialog
@@ -617,6 +662,8 @@ public:
 #ifdef Q_OS_WIN
   QCheckBox* getUseStaticLinkingCheckBox() {return mpUseStaticLinkingCheckBox;}
 #endif
+  void setPostCompilationCommand(const QString & cmd) {mpPostCompilationCommandLineEdit->setText(cmd);}
+  QString getPostCompilationCommand() {return mpPostCompilationCommandLineEdit->text().trimmed();}
   QCheckBox* getIgnoreCommandLineOptionsAnnotationCheckBox() {return mpIgnoreCommandLineOptionsAnnotationCheckBox;}
   QCheckBox* getIgnoreSimulationFlagsAnnotationCheckBox() {return mpIgnoreSimulationFlagsAnnotationCheckBox;}
   QCheckBox* getSaveClassBeforeSimulationCheckBox() {return mpSaveClassBeforeSimulationCheckBox;}
@@ -643,6 +690,7 @@ private:
 #ifdef Q_OS_WIN
   QCheckBox *mpUseStaticLinkingCheckBox;
 #endif
+  QLineEdit *mpPostCompilationCommandLineEdit;
   QCheckBox *mpIgnoreCommandLineOptionsAnnotationCheckBox;
   QCheckBox *mpIgnoreSimulationFlagsAnnotationCheckBox;
   QCheckBox *mpSaveClassBeforeSimulationCheckBox;
@@ -672,14 +720,15 @@ public:
   QFontComboBox* getFontFamilyComboBox() {return mpFontFamilyComboBox;}
   DoubleSpinBox* getFontSizeSpinBox() {return mpFontSizeSpinBox;}
   void setNotificationColor(QColor color) {mNotificaitonColor = color;}
-  QColor getNotificationColor() {return mNotificaitonColor;}
+  QColor getNotificationColor() const {return mNotificaitonColor;}
   void setNotificationPickColorButtonIcon();
   void setWarningColor(QColor color) {mWarningColor = color;}
-  QColor getWarningColor() {return mWarningColor;}
+  QColor getWarningColor() const {return mWarningColor;}
   void setWarningPickColorButtonIcon();
   void setErrorColor(QColor color) {mErrorColor = color;}
-  QColor getErrorColor() {return mErrorColor;}
+  QColor getErrorColor() const {return mErrorColor;}
   void setErrorPickColorButtonIcon();
+  QColor getColor(const StringHandler::SimulationMessageType type) const;
 private:
   OptionsDialog *mpOptionsDialog;
   QGroupBox *mpGeneralGroupBox;
@@ -725,7 +774,6 @@ public:
   QCheckBox* getSaveModelForBitmapInsertionCheckBox() {return mpSaveModelForBitmapInsertionCheckBox;}
   QCheckBox* getAlwaysAskForDraggedComponentName() {return mpAlwaysAskForDraggedComponentName;}
   QCheckBox* getAlwaysAskForTextEditorErrorCheckBox() {return mpAlwaysAskForTextEditorErrorCheckBox;}
-  QComboBox* getOldFrontendComboBox() {return mpOldFrontendComboBox;}
 private:
   OptionsDialog *mpOptionsDialog;
   QGroupBox *mpNotificationsGroupBox;
@@ -736,8 +784,6 @@ private:
   QCheckBox *mpSaveModelForBitmapInsertionCheckBox;
   QCheckBox *mpAlwaysAskForDraggedComponentName;
   QCheckBox *mpAlwaysAskForTextEditorErrorCheckBox;
-  Label *mpOldFrontendLabel;
-  QComboBox *mpOldFrontendComboBox;
 };
 
 class LineStylePage : public QWidget
@@ -877,7 +923,6 @@ private:
   QLineEdit *mpFigaroOptionsFileTextBox;
   QPushButton *mpBrowseFigaroOptionsFileButton;
   Label *mpFigaroProcessLabel;
-  QString mFigaroProcessPath;
   QLineEdit *mpFigaroProcessTextBox;
   QPushButton *mpBrowseFigaroProcessButton;
   QPushButton *mpResetFigaroProcessButton;
@@ -895,7 +940,7 @@ public:
   DebuggerPage(OptionsDialog *pOptionsDialog);
   void setGDBPath(QString path);
   QString getGDBPath();
-  QString getGDBPathForSettings() {return mpGDBPathTextBox->text();}
+  QLineEdit* getGDBPathTextBox() {return mpGDBPathTextBox;}
   QSpinBox* getGDBCommandTimeoutSpinBox() {return mpGDBCommandTimeoutSpinBox;}
   QSpinBox* getGDBOutputLimitSpinBox() {return mpGDBOutputLimitSpinBox;}
   QCheckBox* getDisplayCFramesCheckBox() {return mpDisplayCFramesCheckBox;}
@@ -938,9 +983,9 @@ public:
   QLineEdit* getFMUNameTextBox() {return mpFMUNameTextBox;}
   QLineEdit* getMoveFMUTextBox() {return mpMoveFMUTextBox;}
   QGroupBox* getPlatformsGroupBox() {return mpPlatformsGroupBox;}
-  QComboBox* getLinkingComboBox() {return mpLinkingComboBox;}
   QComboBox *getModelDescriptionFiltersComboBox() const {return mpModelDescriptionFiltersComboBox;}
   QComboBox *getSolverForCoSimulationComboBox() const {return mpSolverForCoSimulationComboBox;}
+  QCheckBox *getIncludeResourcesCheckBox() const {return mpIncludeResourcesCheckBox;}
   QCheckBox *getIncludeSourceCodeCheckBox() const {return mpIncludeSourceCodeCheckBox;}
   QCheckBox *getGenerateDebugSymbolsCheckBox() const {return mpGenerateDebugSymbolsCheckBox;}
   QCheckBox* getDeleteFMUDirectoryAndModelCheckBox() {return mpDeleteFMUDirectoryAndModelCheckBox;}
@@ -964,9 +1009,9 @@ private:
   QLineEdit *mpMoveFMUTextBox;
   QPushButton *mpBrowseFMUDirectoryButton;
   QGroupBox *mpPlatformsGroupBox;
-  QComboBox *mpLinkingComboBox;
   QComboBox *mpSolverForCoSimulationComboBox;
   QComboBox *mpModelDescriptionFiltersComboBox;
+  QCheckBox *mpIncludeResourcesCheckBox;
   QCheckBox *mpIncludeSourceCodeCheckBox;
   QCheckBox *mpGenerateDebugSymbolsCheckBox;
   QGroupBox *mpImportGroupBox;
@@ -1063,6 +1108,7 @@ public:
   DiscardLocalTranslationFlagsDialog(QWidget *pParent = 0);
 private:
   Label *mpDescriptionLabel;
+  Label *mpDescriptionLabel2;
   QListWidget *mpClassesWithLocalTranslationFlagsListWidget;
   QPushButton *mpYesButton;
   QPushButton *mpNoButton;

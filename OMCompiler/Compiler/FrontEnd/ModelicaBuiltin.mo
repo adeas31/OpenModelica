@@ -1105,15 +1105,6 @@ end timerClear;
 
 end Time;
 
-type FileType = enumeration(NoFile, RegularFile, Directory, SpecialFile);
-
-function stat
-  input String name;
-  output FileType fileType;
-  external "C" fileType = ModelicaInternal_stat(name);
-  annotation(Library="ModelicaExternalC");
-end stat;
-
 end Internal;
 
 function checkSettings "Display some diagnostics."
@@ -1680,15 +1671,15 @@ end getVersion;
 function regularFileExists
   input String fileName;
   output Boolean exists;
-algorithm
-  exists := Internal.stat(fileName) == Internal.FileType.RegularFile;
+external "builtin";
+annotation(preferredView="text");
 end regularFileExists;
 
 function directoryExists
   input String dirName;
   output Boolean exists;
-algorithm
-  exists := Internal.stat(dirName) == Internal.FileType.Directory;
+external "builtin";
+annotation(preferredView="text");
 end directoryExists;
 
 impure function stat
@@ -2077,20 +2068,6 @@ external "builtin";
 annotation(preferredView="text");
 end instantiateModel;
 
-function buildOpenTURNSInterface "generates wrapper code for OpenTURNS"
-  input TypeName className;
-  input String pythonTemplateFile;
-  input Boolean showFlatModelica = false;
-  output String outPythonScript;
-  external "builtin";
-end buildOpenTURNSInterface;
-
-function runOpenTURNSPythonScript "runs OpenTURNS with the given python script returning the log file"
-  input String pythonScriptFile;
-  output String logOutputFile;
-  external "builtin";
-end runOpenTURNSPythonScript;
-
 function generateCode "The input is a function name for which C-code is generated and compiled into a dll/so"
   input TypeName className;
   output Boolean success;
@@ -2167,10 +2144,26 @@ function saveTotalModel "Save the className model in a single file, together wit
   input TypeName className;
   input Boolean stripAnnotations = false;
   input Boolean stripComments = false;
+  input Boolean obfuscate = false;
   output Boolean success;
 external "builtin";
 annotation(preferredView="text");
 end saveTotalModel;
+
+function saveTotalModelDebug
+  "Saves the className model in a single file, together with all other classes
+   that it depends on. This function uses a naive heuristic based on which
+   identifiers are used and might save things which are not actually used,
+   and is meant to be used in cases where the normal saveTotalModel fails."
+  input String filename;
+  input TypeName className;
+  input Boolean stripAnnotations = false;
+  input Boolean stripComments = false;
+  input Boolean obfuscate = false;
+  output Boolean success;
+external "builtin";
+annotation(preferredView="text");
+end saveTotalModelDebug;
 
 function save
   input TypeName className;
@@ -2409,7 +2402,7 @@ end rewriteBlockCall;
 function realpath "Get full path name of file or directory name"
   input String name "Absolute or relative file or directory name";
   output String fullName "Full path of 'name'";
-external "C" fullName = ModelicaInternal_fullPathName(name) annotation(Library="ModelicaExternalC");
+external "builtin" fullName = OpenModelicaInternal_fullPathName(name);
   annotation (Documentation(info="<html>
 Return the canonicalized absolute pathname.
 Similar to <a href=\"http://linux.die.net/man/3/realpath\">realpath(3)</a>, but with the safety of Modelica strings.
@@ -2436,15 +2429,11 @@ Returns a list of names of libraries and their path on the system, for example:
 </html>"));
 end getLoadedLibraries;
 
-type LinearSystemSolver = enumeration(dgesv,lpsolve55);
 function solveLinearSystem
-  "Solve A*X = B, using dgesv or lp_solve (if any variable in X is integer)
-  Returns for solver dgesv: info>0: Singular for element i. info<0: Bad input.
-  For solver lp_solve: ???"
+  "Solve A*X = B using dgesv.
+  Returns for solver dgesv: info>0: Singular for element i. info<0: Bad input."
   input Real[size(B,1),size(B,1)] A;
   input Real[:] B;
-  input LinearSystemSolver solver = LinearSystemSolver.dgesv;
-  input Integer[:] isInt = {-1} "list of indices that are integers";
   output Real[size(B,1)] X;
   output Integer info;
 external "builtin";
@@ -2470,6 +2459,7 @@ function importFMU "Imports the Functional Mockup Unit
   input Boolean debugLogging = false "When true the FMU's debug output is printed.";
   input Boolean generateInputConnectors = true "When true creates the input connector pins.";
   input Boolean generateOutputConnectors = true "When true creates the output connector pins.";
+  input TypeName modelName = $TypeName(Default) "Name of the generated model. If default then the name is auto generated using FMU information.";
   output String generatedFileName "Returns the full path of the generated file.";
 external "builtin";
 annotation(preferredView="text");
@@ -2491,7 +2481,8 @@ annotation(preferredView="text");
 end importFMUModelDescription;
 
 function translateModelFMU
-"translates a modelica model into a Functional Mockup Unit.
+"Deprecated: Use buildModelFMU instead.
+Translates a modelica model into a Functional Mockup Unit.
 The only required argument is the className, while all others have some default values.
   Example command:
   translateModelFMU(className, version=\"2.0\");"
@@ -2502,7 +2493,7 @@ The only required argument is the className, while all others have some default 
   input Boolean includeResources = false "include Modelica based resources via loadResource or not";
   output String generatedFileName "Returns the full path of the generated FMU.";
 external "builtin";
-annotation(preferredView="text");
+annotation(preferredView="text", version="Deprecated");
 end translateModelFMU;
 
 function buildModelFMU
@@ -2514,8 +2505,12 @@ The only required argument is the className, while all others have some default 
   input String version = "2.0" "FMU version, 1.0 or 2.0.";
   input String fmuType = "me" "FMU type, me (model exchange), cs (co-simulation), me_cs (both model exchange and co-simulation)";
   input String fileNamePrefix = "<default>" "fileNamePrefix. <default> = \"className\"";
-  input String platforms[:] = {"static"} "The list of platforms to generate code for. \"dynamic\"=current platform, dynamically link the runtime. \"static\"=current platform, statically link everything. Else, use a host triple, e.g. \"x86_64-linux-gnu\" or \"x86_64-w64-mingw32\"";
-  input Boolean includeResources = false "include Modelica based resources via loadResource or not";
+  input String platforms[:] = {"static"} "The list of platforms to generate code for.
+                                          \"dynamic\"=current platform, dynamically link the runtime.
+                                          \"static\"=current platform, statically link everything.
+                                          \"<cpu>-<vendor>-<os>\", host tripple, e.g. \"x86_64-linux-gnu\" or \"x86_64-w64-mingw32\".
+                                          \"<cpu>-<vendor>-<os> docker run <image>\" host tripple with Docker image, e.g. \"x86_64-linux-gnu docker run --pull=never multiarch/crossbuild\"";
+  input Boolean includeResources = false "Depreacted and no effect";
   output String generatedFileName "Returns the full path of the generated FMU.";
 external "builtin";
 annotation(preferredView="text");
@@ -2667,7 +2662,7 @@ external "builtin";
 annotation(preferredView="text");
 end copyClass;
 
-function linearize "creates a model with symbolic linearization matrixes"
+function linearize "creates a model with symbolic linearization matrices"
   input TypeName className "the class that should simulated";
   input Real startTime = "<default>" "the start time of the simulation. <default> = 0.0";
   input Real stopTime = 1.0 "the stop time of the simulation. <default> = 1.0";
@@ -2686,12 +2681,12 @@ function linearize "creates a model with symbolic linearization matrixes"
   output String linearizationResult;
 external "builtin";
 annotation(Documentation(info="<html>
-<p>Creates a model with symbolic linearization matrixes.</p>
-<p>At stopTime the linearization matrixes are evaluated and a modelica model is created.</p>
+<p>Creates a model with symbolic linearization matrices.</p>
+<p>At stopTime the linearization matrices are evaluated and a modelica model is created.</p>
 <p>The only required argument is the className, while all others have some default values.</p>
 <h2>Usage:</h2>
 <p><b>linearize</b>(<em>A</em>, stopTime=0.0);</p>
-<p>Creates the file \"linear_A.mo\" that contains the linearized matrixes at stopTime.</p>
+<p>Creates the file \"linear_A.mo\" that contains the linearized matrices at stopTime.</p>
 </html>", revisions="<html>
 <table>
 <tr><th>Revision</th><th>Author</th><th>Comment</th></tr>
@@ -2965,7 +2960,7 @@ public function compareSimulationResults "compares simulation results."
   input String[:] vars = fill("",0);
   output String[:] result;
 external "builtin";
-annotation(preferredView="text");
+annotation(preferredView="text", version="Deprecated");
 end compareSimulationResults;
 
 public function deltaSimulationResults "calculates the sum of absolute errors."
@@ -3161,6 +3156,21 @@ annotation(
   preferredView="text");
 end getElementModifierNames;
 
+function setComponentModifierValue = setElementModifierValue;
+
+function setElementModifierValue
+  input TypeName className;
+  input TypeName elementName;
+  input ExpressionOrModification modifier;
+  output Boolean success;
+external "builtin";
+annotation(
+  Documentation(info="<html>
+  Sets a modifier on an element in a class definition.
+</html>"),
+  preferredView="text");
+end setElementModifierValue;
+
 function getElementModifierValue
   input TypeName className;
   input TypeName modifier;
@@ -3216,13 +3226,41 @@ annotation(
   preferredView="text");
 end removeElementModifiers;
 
+function setExtendsModifierValue
+  input TypeName className;
+  input TypeName extendsName;
+  input TypeName elementName;
+  input ExpressionOrModification modifier;
+  output Boolean success;
+external "builtin"
+annotation(
+  Documentation(info="<html>
+Sets a modifier on an extends clause in a class definition, for example:
+<pre>
+package P
+  model M
+    extends A.B(a = 1.0, x(z = 2.0));
+  end M;
+end P;
+
+setExtendsModifierValue(P.M, A.B, x.y, $Code((start = 3.0))) =>
+
+package P
+  model M
+    extends A.B(a = 1.0, x(z = 2.0), y(start = 3.0)));
+  end M;
+end P;
+</html>"),
+  preferredView="text");
+end setExtendsModifierValue;
+
 function getInstantiatedParametersAndValues
   input TypeName cls;
   output String[:] values;
 external "builtin";
 annotation(
   Documentation(info="<html>
-  <p>Returns the parameter names and values from the DAE.</p>
+  <p>Returns the top-level parameter names and values from the DAE.</p>
 </html>"),
   preferredView="text");
 end getInstantiatedParametersAndValues;
@@ -3293,6 +3331,18 @@ function getNthConnection "Returns the Nth connection.
 external "builtin";
 annotation(preferredView="text");
 end getNthConnection;
+
+function getConnectionList "returns an array of all connections including those within loops"
+  input TypeName className;
+  output String[:,:] result;
+external "builtin";
+annotation(
+  Documentation(info="<html>
+Returns a list of all connect equations including those in loops. For example:
+<pre>{{\"connection1.lhs\",\"connection1.rhs\"}, {\"connection2.lhs\",\"connection2.rhs\"}}</pre>
+</html>"),
+  preferredView="text");
+end getConnectionList;
 
 function getAlgorithmCount "Counts the number of Algorithm sections in a class."
   input TypeName class_;
@@ -3652,6 +3702,28 @@ annotation(
   preferredView="text");
 end isPartial;
 
+function isReplaceable
+  input TypeName element;
+  output Boolean b;
+external "builtin";
+annotation(
+  Documentation(info="<html>
+  Returns true if the given element is replaceable.
+</html>"),
+  preferredView="text");
+end isReplaceable;
+
+function isRedeclare
+  input TypeName element;
+  output Boolean b;
+external "builtin";
+annotation(
+  Documentation(info="<html>
+  Returns true if the given element is a redeclare.
+</html>"),
+  preferredView="text");
+end isRedeclare;
+
 function isModel
   input TypeName cl;
   output Boolean b;
@@ -3822,7 +3894,7 @@ function isExperiment
   output Boolean res;
 external "builtin";
 annotation(Documentation(info="<html>
-<p>An experiment is defined as having annotation experiment(StopTime=...)</p>
+<p>An experiment is defined as a non-partial model or block having annotation experiment(StopTime=...)</p>
 </html>"));
 end isExperiment;
 
@@ -3961,6 +4033,17 @@ annotation(
   preferredView="text");
 end getAvailableLibraries;
 
+function getAvailableLibraryVersions
+  input TypeName libraryName;
+  output String[:] librariesAndVersions;
+external "builtin";
+annotation(
+  Documentation(info="<html>
+  Returns the installed versions of a library.
+</html>"),
+  preferredView="text");
+end getAvailableLibraryVersions;
+
 function installPackage
   input TypeName pkg;
   input String version = "";
@@ -3998,6 +4081,30 @@ annotation(
 </html>"),
   preferredView="text");
 end getAvailablePackageVersions;
+
+function getAvailablePackageConversionsTo
+  input TypeName pkg;
+  input String version;
+  output String[:] convertsTo;
+external "builtin";
+annotation(
+  Documentation(info="<html>
+  Returns the versions that provide conversion to the requested version of the library.
+</html>"),
+  preferredView="text");
+end getAvailablePackageConversionsTo;
+
+function getAvailablePackageConversionsFrom
+  input TypeName pkg;
+  input String version;
+  output String[:] convertsTo;
+external "builtin";
+annotation(
+  Documentation(info="<html>
+  Returns the versions that provide conversion from the requested version of the library.
+</html>"),
+  preferredView="text");
+end getAvailablePackageConversionsFrom;
 
 function upgradeInstalledPackages
   input Boolean installNewestVersions = true;
@@ -4210,6 +4317,10 @@ function getClassInformation
   output String preferredView;
   output Boolean state;
   output String access;
+  output String versionDate;
+  output String versionBuild;
+  output String dateModified;
+  output String revisionId;
 external "builtin";
 annotation(
   Documentation(info="<html>
@@ -4343,11 +4454,79 @@ annotation(
 </html>"), preferredView="text");
 end generateScriptingAPI;
 
-function convertPackage
-  input TypeName cl;
+function runConversionScript
+  input TypeName packageToConvert;
   input String scriptFile;
+  output Boolean success;
 external "builtin";
-end convertPackage;
+annotation(preferredView="text",Documentation(info="<html>
+<p>Runs a conversion script on a selected package.</p>
+</html>"));
+end runConversionScript;
+
+function convertPackageToLibrary
+  input TypeName packageToConvert;
+  input TypeName library;
+  input String libraryVersion;
+  output Boolean success;
+external "builtin";
+annotation(preferredView="text",Documentation(info="<html>
+<p>Runs the conversion script for a library on a selected package.</p>
+</html>"));
+end convertPackageToLibrary;
+
+function getModelInstance
+  "Dumps a model instance as a JSON string."
+  input TypeName className;
+  input String modifier = "";
+  input Boolean prettyPrint = false;
+  output String result;
+external "builtin";
+end getModelInstance;
+
+function getModelInstanceIcon
+  "Dumps only the Icon and IconMap annotations of a model, using the same JSON
+   format as getModelInstance."
+  input TypeName className;
+  input Boolean prettyPrint = false;
+  output String result;
+external "builtin";
+end getModelInstanceIcon;
+
+function modifierToJSON
+  "Parses a modifier given as a string and dumps it as JSON."
+  input String modifier;
+  input Boolean prettyPrint = false;
+  output String json;
+external "builtin";
+end modifierToJSON;
+
+function storeAST
+  output Integer id;
+external "builtin";
+annotation(preferredView="text",Documentation(info="<html>
+<p>Stores the AST and returns an id that can be used to restore it with restoreAST.</p>
+</html>"));
+end storeAST;
+
+function restoreAST
+  input Integer id;
+  output Boolean success;
+external "builtin";
+annotation(preferredView="text",Documentation(info="<html>
+<p>Restores an AST that was previously stored with storeAST.</p>
+</html>"));
+end restoreAST;
+
+function qualifyPath
+  input TypeName classPath;
+  input TypeName path;
+  output TypeName qualifiedPath;
+external "builtin";
+annotation(preferredView="text",Documentation(info="<html>
+<p>Returns the fully qualified path for the given path in a class.</p>
+</html>"));
+end qualifyPath;
 
 // OMSimulator API calls
 type oms_system = enumeration(oms_system_none,oms_system_tlm, oms_system_wc,oms_system_sc);
@@ -5153,7 +5332,7 @@ package AutoCompletion "Auto completion information for OMEdit."
       String features[:] = fill("", 0) "Activated library license features";
       String startDate = "" "Optional start date in UTCformat YYYY-MM-DD";
       String expirationDate = "" "Optional expiration date in UTCformat YYYY-MM-DD";
-      String operations[:] = fill("",0) "Library usage conditions";
+      String operations[:] = fill("", 0) "Library usage conditions";
     end License;
 
     // TODO: Function Derivative Annotations
@@ -5167,7 +5346,7 @@ package AutoCompletion "Auto completion information for OMEdit."
     // Annotation Choices for Modifications and Redeclarations
     record choices "Defines a suitable redeclaration or modifications of the element."
       Boolean checkBox = true "Display a checkbox to input the values false or true in the graphical user interface.";
-      // TODO: how to handle choice?
+      String choice[:] = fill("", 0) "the choices as an array of strings";
     end choices;
 
     Boolean choicesAllMatching "Specify whether to construct an automatic list of choices menu or not.";

@@ -66,8 +66,8 @@ case sc as SIMCODE(modelInfo=modelInfo as MODELINFO(__)) then
   let target  = simulationCodeTarget()
   let fileNamePrefixTmpDir = '<%fileNamePrefix%>.fmutmp/sources/<%fileNamePrefix%>'
   let()= textFile(simulationLiteralsFile(fileNamePrefix, literals), '<%fileNamePrefixTmpDir%>_literals.h')
-  let()= textFile(simulationFunctionsHeaderFile(fileNamePrefix, modelInfo.functions, recordDecls), '<%fileNamePrefixTmpDir%>_functions.h')
-  let()= textFile(simulationFunctionsFile(fileNamePrefix, modelInfo.functions), '<%fileNamePrefixTmpDir%>_functions.c')
+  let()= textFile(simulationFunctionsHeaderFile(fileNamePrefix, modelInfo.functions, recordDecls, sc.generic_loop_calls), '<%fileNamePrefixTmpDir%>_functions.h')
+  let()= textFile(simulationFunctionsFile(fileNamePrefix, modelInfo.functions, generic_loop_calls), '<%fileNamePrefixTmpDir%>_functions.c')
   let()= textFile(externalFunctionIncludes(sc.externalFunctionIncludes), '<%fileNamePrefixTmpDir%>_includes.h')
   let()= textFile(recordsFile(fileNamePrefix, recordDecls, true /*isSimulation*/), '<%fileNamePrefixTmpDir%>_records.c')
   let()= textFile(simulationHeaderFile(simCode), '<%fileNamePrefixTmpDir%>_model.h')
@@ -254,11 +254,16 @@ case SIMCODE(__) then
   #include "simulation/solver/events.h"
   <%if isFMIVersion20(FMUVersion) then
   <<
+  #define FMI2_FUNCTION_PREFIX <%modelNamePrefix(simCode)%>_
+  #include "fmi2Functions.h"
   #include "fmi-export/fmu2_model_interface.h"
   #include "fmi-export/fmu_read_flags.h"
   >>
   else
-  '#include "fmi-export/fmu1_model_interface.h"'%>
+  <<
+  #include "fmi2Functions.h"
+  #include "fmi-export/fmu1_model_interface.h"
+  >>%>
 
   #ifdef __cplusplus
   extern "C" {
@@ -281,6 +286,8 @@ case SIMCODE(__) then
   fmi2ValueReference mapInputReference2InputNumber(const fmi2ValueReference vr);
   fmi2ValueReference mapOutputReference2OutputNumber(const fmi2ValueReference vr);
   fmi2ValueReference mapOutputReference2RealOutputDerivatives(const fmi2ValueReference vr);
+  fmi2ValueReference mapInitialUnknownsdependentIndex(const fmi2ValueReference vr);
+  fmi2ValueReference mapInitialUnknownsIndependentIndex(const fmi2ValueReference vr);
   >>
   else
   <<
@@ -331,6 +338,8 @@ case SIMCODE(__) then
   <%setExternalFunction2(modelInfo)%>
   <%mapInputAndOutputs(simCode)%>
   <%mapRealOutputDerivatives(simCode, FMUType)%>
+  <%mapInitialUnknownsdependentCrefs(simCode)%>
+  <%mapInitialUnknownsIndependentCrefs(simCode)%>
   >>
   else
   <<
@@ -363,11 +372,13 @@ let numberOfReals = intAdd(intMul(varInfo.numStateVars,2),intAdd(varInfo.numDisc
 let numberOfIntegers = intAdd(varInfo.numIntAlgVars,intAdd(varInfo.numIntParams,varInfo.numIntAliasVars))
 let numberOfStrings = intAdd(varInfo.numStringAlgVars,intAdd(varInfo.numStringParamVars,varInfo.numStringAliasVars))
 let numberOfBooleans = intAdd(varInfo.numBoolAlgVars,intAdd(varInfo.numBoolParams,varInfo.numBoolAliasVars))
+let numberOfRealInputs = varInfo.numRealInputVars
   <<
   // define model size
   #define NUMBER_OF_STATES <%if intEq(varInfo.numStateVars,1) then statesnumwithDummy(listStates) else  varInfo.numStateVars%>
   #define NUMBER_OF_EVENT_INDICATORS <%varInfo.numZeroCrossings%>
   #define NUMBER_OF_REALS <%numberOfReals%>
+  #define NUMBER_OF_REAL_INPUTS <%numberOfRealInputs%>
   #define NUMBER_OF_INTEGERS <%numberOfIntegers%>
   #define NUMBER_OF_STRINGS <%numberOfStrings%>
   #define NUMBER_OF_BOOLEANS <%numberOfBooleans%>
@@ -453,6 +464,7 @@ end setStartValues;
 template initializeFunction(list<SimEqSystem> allEquations)
   "Generates initialize function for c file."
 ::=
+  let &sub = buffer ""
   let &varDecls = buffer "" /*BUFD*/
   let eqPart = ""/* (allEquations |> eq as SES_SIMPLE_ASSIGN(__) =>
       equation_(eq, contextOther, &varDecls)
@@ -465,7 +477,7 @@ template initializeFunction(list<SimEqSystem> allEquations)
 
     <%eqPart%>
     <%allEquations |> SES_SIMPLE_ASSIGN(__) =>
-      'if (sim_verbose) { printf("Setting variable start value: %s(start=%f)\n", "<%escapeModelicaStringToCString(crefStrNoUnderscore(cref))%>", <%cref(cref)%>); }'
+      'if (sim_verbose) { printf("Setting variable start value: %s(start=%f)\n", "<%escapeModelicaStringToCString(crefStrNoUnderscore(cref))%>", <%cref(cref, &sub)%>); }'
     ;separator="\n"%>
 
   }
@@ -793,6 +805,10 @@ case MODELINFO(vars=SIMVARS(__),varInfo=VARINFO(numAlgAliasVars=numAlgAliasVars,
   let ixEnd = intAdd(numAlgAliasVars,intAdd(numParams, intAdd(intMul(2,numStateVars),intAdd(numAlgVars,numDiscreteReal))))
   <<
   fmi2Status setReal(ModelInstance* comp, const fmi2ValueReference vr, const fmi2Real value) {
+    // set start value attribute for all variable that has start value, till initialization mode
+    if (vr < <%ixFirstParam%> && (comp->state == model_state_instantiated || comp->state == model_state_initialization_mode)) {
+      comp->fmuData->modelData->realVarsData[vr].attribute.start = value;
+    }
     if (vr < <%ixFirstParam%>) {
       comp->fmuData->localData[0]->realVars[vr] = value;
       return fmi2OK;
@@ -871,6 +887,10 @@ case MODELINFO(vars=SIMVARS(__),varInfo=VARINFO(numIntAliasVars=numAliasVars, nu
   let ixEnd = intAdd(numAliasVars,intAdd(numParams, numAlgVars))
   <<
   fmi2Status setInteger(ModelInstance* comp, const fmi2ValueReference vr, const fmi2Integer value) {
+    // set start value attribute for all variable that has start value, till initialization mode
+    if (vr < <%ixFirstParam%> && (comp->state == model_state_instantiated || comp->state == model_state_initialization_mode)) {
+      comp->fmuData->modelData->integerVarsData[vr].attribute.start = value;
+    }
     if (vr < <%ixFirstParam%>) {
       comp->fmuData->localData[0]->integerVars[vr] = value;
       return fmi2OK;
@@ -1190,6 +1210,44 @@ case SIMCODE(modelInfo=MODELINFO(vars=SIMVARS(outputVars=outputVars))) then
 end match
 end mapRealOutputDerivatives;
 
+template mapInitialUnknownsdependentCrefs(SimCode simCode)
+""
+::=
+match simCode
+case SIMCODE(modelStructure=SOME(FMIMODELSTRUCTURE(fmiInitialUnknowns=FMIINITIALUNKNOWNS(sortedUnknownCrefs=sortedUnknownCrefs)))) then
+    <<
+    /* function maps initialUnknowns UnknownVars ValueReferences to an internal partial derivatives index */
+    fmi2ValueReference mapInitialUnknownsdependentIndex(const fmi2ValueReference vr) {
+        switch (vr) {
+          <%sortedUnknownCrefs |> (index, cref) =>
+          'case <%lookupVR(cref, simCode)%>: return <%index%>; break;' ;separator="\n"%>
+          default:
+            return -1;
+        }
+    }
+    >>
+end match
+end mapInitialUnknownsdependentCrefs;
+
+template mapInitialUnknownsIndependentCrefs(SimCode simCode)
+""
+::=
+match simCode
+case SIMCODE(modelStructure=SOME(FMIMODELSTRUCTURE(fmiInitialUnknowns=FMIINITIALUNKNOWNS(sortedknownCrefs=sortedknownCrefs)))) then
+    <<
+    /* function maps initialUnknowns knownVars ValueReferences to an internal partial derivatives index */
+    fmi2ValueReference mapInitialUnknownsIndependentIndex(const fmi2ValueReference vr) {
+        switch (vr) {
+          <%sortedknownCrefs |> (index, cref) =>
+          'case <%lookupVR(cref, simCode)%>: return <%index%>; break;' ;separator="\n"%>
+          default:
+            return -1;
+        }
+    }
+    >>
+end match
+end mapInitialUnknownsIndependentCrefs;
+
 template getPlatformString2(String modelNamePrefix, String platform, String fileNamePrefix, String fmuTargetName, String dirExtra, String libsPos1, String libsPos2, String omhome, String FMUVersion)
  "returns compilation commands for the platform. "
 ::=
@@ -1252,12 +1310,11 @@ template settingsfile(SimCode simCode)
   #define OMC_MODEL_PREFIX "<%modelNamePrefix(simCode)%>"
   #define OMC_MINIMAL_RUNTIME 1
   #define OMC_FMI_RUNTIME 1
-  <%if isSome(fmiSimulationFlags) then "#define WITH_SUNDIALS 1"%>
   #endif
  >>
 end settingsfile;
 
-template fmuMakefile(String target, SimCode simCode, String FMUVersion, list<String> sourceFiles, list<String> runtimeObjectFiles, list<String> dgesvObjectFiles, list <String> sundialsObjectFiles)
+template fmuMakefile(String target, SimCode simCode, String FMUVersion, list<String> sourceFiles, list<String> runtimeObjectFiles, list<String> dgesvObjectFiles, list<String> cminpackObjectFiles, list <String> sundialsObjectFiles)
  "Generates the contents of the makefile for the simulation case. Copy libexpat & correct linux fmu"
 ::=
   let common =
@@ -1271,12 +1328,15 @@ template fmuMakefile(String target, SimCode simCode, String FMUVersion, list<Str
     ifneq ($(NEED_DGESV),)
     DGESV_OBJS = <%dgesvObjectFiles ; separator = " "%>
     endif
+    ifneq ($(NEED_CMINPACK),)
+    CMINPACK_OBJS=<%cminpackObjectFiles ; separator = " "%>
+    endif
     ifneq ($(NEED_RUNTIME),)
-    RUNTIMEFILES=<%runtimeObjectFiles ; separator = " "%> $(DGESV_OBJS)
+    RUNTIMEFILES=<%runtimeObjectFiles ; separator = " "%> $(DGESV_OBJS) $(CMINPACK_OBJS)
     endif
     ifneq ($(NEED_SUNDIALS),)
     FMISUNDIALSFILES=<%sundialsObjectFiles ; separator = " "%>
-    LDFLAGS+=-lsundials_cvode -lsundials_nvecserial
+    LDFLAGS+=-Wl,-Bstatic -lsundials_cvode -lsundials_nvecserial -Wl,-Bdynamic
     endif
     >>
 
@@ -1378,10 +1438,12 @@ template fmuMakefile(String target, SimCode simCode, String FMUVersion, list<Str
       DLLEXT=@DLLEXT@
       NEED_RUNTIME=@NEED_RUNTIME@
       NEED_DGESV=@NEED_DGESV@
+      NEED_CMINPACK=@NEED_CMINPACK@
       NEED_SUNDIALS=@NEED_SUNDIALS@
       FMIPLATFORM=@FMIPLATFORM@
       # Note: Simulation of the fmu with dymola does not work with -finline-small-functions (enabled by most optimization levels)
       CPPFLAGS=@CPPFLAGS@
+      override CPPFLAGS += -DFMI2_OVERRIDE_FUNCTION_PREFIX
 
       override CPPFLAGS += <%makefileParams.includes ; separator=" "%>
 
@@ -1593,21 +1655,21 @@ template dumpFMUModelDescriptionInputOutputVariable(String name, String causalit
   else if boolAnd(generateOutputConnectors, boolAnd(stringEq(causality, "output"),stringEq(baseType, "Boolean"))) then "Modelica.Blocks.Interfaces.BooleanOutput "+name+""
 end dumpFMUModelDescriptionInputOutputVariable;
 
-template importFMUModelica(FmiImport fmi)
+template importFMUModelica(FmiImport fmi, String name)
  "Generates the Modelica code depending on the FMU type."
 ::=
 match fmi
 case FMIIMPORT(__) then
   match fmiInfo
     case (INFO(fmiVersion = "1.0", fmiType = 0)) then
-      importFMU1ModelExchange(fmi)
+      importFMU1ModelExchange(fmi, name)
     case (INFO(fmiVersion = "1.0", fmiType = 1)) then
-      importFMU1CoSimulationStandAlone(fmi)
+      importFMU1CoSimulationStandAlone(fmi, name)
     case (INFO(fmiVersion = "2.0", fmiType = 1)) then
-      importFMU2ModelExchange(fmi)
+      importFMU2ModelExchange(fmi, name)
 end importFMUModelica;
 
-template importFMU1ModelExchange(FmiImport fmi)
+template importFMU1ModelExchange(FmiImport fmi, String name)
  "Generates Modelica code for FMI Model Exchange version 1.0"
 ::=
 match fmi
@@ -1665,7 +1727,7 @@ case FMIIMPORT(fmiInfo=INFO(__),fmiExperimentAnnotation=EXPERIMENTANNOTATION(__)
   let stringOutputVariablesVRs = dumpVariables(fmiModelVariablesList, "string", "output", false, 1, "1.0")
   let stringOutputVariablesNames = dumpVariables(fmiModelVariablesList, "string", "output", false, 2, "1.0")
   <<
-  model <%fmiInfo.fmiModelIdentifier%>_<%getFMIType(fmiInfo)%>_FMU<%if stringEq(fmiInfo.fmiDescription, "") then "" else " \""+fmiInfo.fmiDescription+"\""%>
+  model <%if stringEq(name, "") then fmiInfo.fmiModelIdentifier+"_"+getFMIType(fmiInfo)+"_FMU" else name%><%if stringEq(fmiInfo.fmiDescription, "") then "" else " \""+fmiInfo.fmiDescription+"\""%>
     <%dumpFMITypeDefinitions(fmiTypeDefinitionsList)%>
     constant String fmuWorkingDir = "<%fmuWorkingDirectory%>";
     parameter Integer logLevel = <%fmiLogLevel%> "log level used during the loading of FMU" annotation (Dialog(tab="FMI", group="Enable logging"));
@@ -1695,8 +1757,6 @@ case FMIIMPORT(fmiInfo=INFO(__),fmiExperimentAnnotation=EXPERIMENTANNOTATION(__)
     Real triggerDSSEvent;
     Real nextEventTime;
   initial equation
-    flowStartTime = fmi1Functions.fmi1SetTime(fmi1me, time, 1);
-    flowInitialized = fmi1Functions.fmi1Initialize(fmi1me, flowParamsStart+flowInitInputs+flowStartTime);
     <%if intGt(listLength(fmiInfo.fmiNumberOfContinuousStates), 0) then
     <<
     fmi_x = fmi1Functions.fmi1GetContinuousStates(fmi1me, numberOfContinuousStates, flowParamsStart+flowInitialized);
@@ -1704,6 +1764,8 @@ case FMIIMPORT(fmiInfo=INFO(__),fmiExperimentAnnotation=EXPERIMENTANNOTATION(__)
     %>
   initial algorithm
     flowParamsStart := 1;
+    flowStartTime := fmi1Functions.fmi1SetTime(fmi1me, time, 1);
+    flowInitialized := fmi1Functions.fmi1Initialize(fmi1me, flowParamsStart+flowInitInputs+flowStartTime);
     <%if not stringEq(realParametersVRs, "") then "flowParamsStart := fmi1Functions.fmi1SetRealParameter(fmi1me, {"+realParametersVRs+"}, {"+realParametersNames+"});"%>
     <%if not stringEq(integerParametersVRs, "") then "flowParamsStart := fmi1Functions.fmi1SetIntegerParameter(fmi1me, {"+integerParametersVRs+"}, {"+integerParametersNames+"});"%>
     <%if not stringEq(booleanParametersVRs, "") then "flowParamsStart := fmi1Functions.fmi1SetBooleanParameter(fmi1me, {"+booleanParametersVRs+"}, {"+booleanParametersNames+"});"%>
@@ -1957,11 +2019,11 @@ case FMIIMPORT(fmiInfo=INFO(__),fmiExperimentAnnotation=EXPERIMENTANNOTATION(__)
         external "C" outCallEventUpdate = fmi1CompletedIntegratorStep_OMC(fmi1me, inFlowStates) annotation(Library = {"OpenModelicaFMIRuntimeC", "fmilib"});
       end fmi1CompletedIntegratorStep;
     end fmi1Functions;
-  end <%fmiInfo.fmiModelIdentifier%>_<%getFMIType(fmiInfo)%>_FMU;
+  end <%if stringEq(name, "") then fmiInfo.fmiModelIdentifier+"_"+getFMIType(fmiInfo)+"_FMU" else name%>;
   >>
 end importFMU1ModelExchange;
 
-template importFMU2ModelExchange(FmiImport fmi)
+template importFMU2ModelExchange(FmiImport fmi, String name)
  "Generates Modelica code for FMI Model Exchange version 2.0"
 ::=
 match fmi
@@ -2010,6 +2072,26 @@ case FMIIMPORT(fmiInfo=INFO(__),fmiExperimentAnnotation=EXPERIMENTANNOTATION(__)
   let stringInputVariablesVRs = dumpVariables(fmiModelVariablesList, "string", "input", false, 1, "2.0")
   let stringStartVariablesNames = dumpVariables(fmiModelVariablesList, "string", "input", false, 2, "2.0")
   let stringInputVariablesReturnNames = dumpVariables(fmiModelVariablesList, "string", "input", false, 3, "2.0")
+  /* Get event input Real varibales and their value references */
+  let nRealEventInputVariables = listLength(filterModelVariables(fmiModelVariablesList, "real", "input"))
+  let realEventInputVariablesVRs = dumpVariables(fmiModelVariablesList, "real", "input", false, 1, "2.0")
+  let realEventInputVariablesNames = dumpVariables(fmiModelVariablesList, "real", "input", false, 2, "2.0")
+  let realEventInputVariablesReturnNames = dumpVariables(fmiModelVariablesList, "real", "input", false, 3, "2.0")
+  /* Get event input Integer varibales and their value references */
+  let nIntegerEventInputVariables = listLength(filterModelVariables(fmiModelVariablesList, "integer", "input"))
+  let integerEventInputVariablesVRs = dumpVariables(fmiModelVariablesList, "integer", "input", false, 1, "2.0")
+  let integerEventInputVariablesNames = dumpVariables(fmiModelVariablesList, "integer", "input", false, 2, "2.0")
+  let integerEventInputVariablesReturnNames = dumpVariables(fmiModelVariablesList, "integer", "input", false, 3, "2.0")
+  /* Get event input Boolean varibales and their value references */
+  let nBooleanEventInputVariables = listLength(filterModelVariables(fmiModelVariablesList, "boolean", "input"))
+  let booleanEventInputVariablesVRs = dumpVariables(fmiModelVariablesList, "boolean", "input", false, 1, "2.0")
+  let booleanEventInputVariablesNames = dumpVariables(fmiModelVariablesList, "boolean", "input", false, 2, "2.0")
+  let booleanEventInputVariablesReturnNames = dumpVariables(fmiModelVariablesList, "boolean", "input", false, 3, "2.0")
+  /* Get event input String varibales and their value references */
+  let nStringEventInputVariables = listLength(filterModelVariables(fmiModelVariablesList, "string", "input"))
+  let stringEventInputVariablesVRs = dumpVariables(fmiModelVariablesList, "string", "input", false, 1, "2.0")
+  let stringEventStartVariablesNames = dumpVariables(fmiModelVariablesList, "string", "input", false, 2, "2.0")
+  let stringEventInputVariablesReturnNames = dumpVariables(fmiModelVariablesList, "string", "input", false, 3, "2.0")
   /* Get output Real varibales and their value references */
   let realOutputVariablesVRs = dumpVariables(fmiModelVariablesList, "real", "output", false, 1, "2.0")
   let realOutputVariablesNames = dumpVariables(fmiModelVariablesList, "real", "output", false, 2, "2.0")
@@ -2023,7 +2105,7 @@ case FMIIMPORT(fmiInfo=INFO(__),fmiExperimentAnnotation=EXPERIMENTANNOTATION(__)
   let stringOutputVariablesVRs = dumpVariables(fmiModelVariablesList, "string", "output", false, 1, "2.0")
   let stringOutputVariablesNames = dumpVariables(fmiModelVariablesList, "string", "output", false, 2, "2.0")
   <<
-  model <%fmiInfo.fmiModelIdentifier%>_<%getFMIType(fmiInfo)%>_FMU<%if stringEq(fmiInfo.fmiDescription, "") then "" else " \""+fmiInfo.fmiDescription+"\""%>
+  model <%if stringEq(name, "") then fmiInfo.fmiModelIdentifier+"_"+getFMIType(fmiInfo)+"_FMU" else name%><%if stringEq(fmiInfo.fmiDescription, "") then "" else " \""+fmiInfo.fmiDescription+"\""%>
     <%dumpFMITypeDefinitions(fmiTypeDefinitionsList)%>
     constant String fmuWorkingDir = "<%fmuWorkingDirectory%>";
     parameter Integer logLevel = <%fmiLogLevel%> "log level used during the loading of FMU" annotation (Dialog(tab="FMI", group="Enable logging"));
@@ -2052,14 +2134,15 @@ case FMIIMPORT(fmiInfo=INFO(__),fmiExperimentAnnotation=EXPERIMENTANNOTATION(__)
     <%if not stringEq(booleanInputVariablesVRs, "") then "Boolean "+booleanInputVariablesReturnNames+";"%>
     <%if not stringEq(stringInputVariablesVRs, "") then "String stringInputVariables["+nStringInputVariables+"];"%>
     <%if not stringEq(stringInputVariablesVRs, "") then "String "+stringInputVariablesReturnNames+";"%>
+    <%if not stringEq(realEventInputVariablesVRs, "") then "Real realEventInputVariables["+nRealEventInputVariables+"](each fixed=true);"%>
+    <%if not stringEq(integerEventInputVariablesVRs, "") then "Integer integerEventInputVariables["+nIntegerEventInputVariables+"](each fixed=true);"%>
+    <%if not stringEq(booleanEventInputVariablesVRs, "") then "Boolean booleanEventInputVariables["+nBooleanEventInputVariables+"](each fixed=true);"%>
+    <%if not stringEq(stringEventInputVariablesVRs, "") then "String stringEventInputVariables["+nStringEventInputVariables+"](each fixed=true);"%>
     Boolean callEventUpdate;
     Boolean newStatesAvailable(fixed = true);
     Real triggerDSSEvent;
     Real nextEventTime(fixed = true);
   initial equation
-    flowStartTime = fmi2Functions.fmi2SetTime(fmi2me, time, 1);
-    flowEnterInitialization = fmi2Functions.fmi2EnterInitialization(fmi2me, flowParamsStart+flowInitInputs+flowStartTime);
-    flowInitialized = fmi2Functions.fmi2ExitInitialization(fmi2me, flowParamsStart+flowInitInputs+flowStartTime+flowEnterInitialization);
     <%if intGt(listLength(fmiInfo.fmiNumberOfContinuousStates), 0) then
     <<
     fmi_x = fmi2Functions.fmi2GetContinuousStates(fmi2me, numberOfContinuousStates, flowParamsStart+flowInitialized);
@@ -2067,18 +2150,21 @@ case FMIIMPORT(fmiInfo=INFO(__),fmiExperimentAnnotation=EXPERIMENTANNOTATION(__)
     %>
   initial algorithm
     flowParamsStart := 1;
+    flowInitInputs := 1;
+    flowStartTime := fmi2Functions.fmi2SetupExperiment(fmi2me, false, 0.0, time, false, 0.0, flowParamsStart+flowInitInputs);
+    flowEnterInitialization := fmi2Functions.fmi2EnterInitialization(fmi2me, flowParamsStart+flowInitInputs+flowStartTime);
+    flowInitialized := fmi2Functions.fmi2ExitInitialization(fmi2me, flowParamsStart+flowInitInputs+flowStartTime+flowEnterInitialization);
     <%if not stringEq(realParametersVRs, "") then "flowParamsStart := fmi2Functions.fmi2SetRealParameter(fmi2me, {"+realParametersVRs+"}, {"+realParametersNames+"});"%>
     <%if not stringEq(integerParametersVRs, "") then "flowParamsStart := fmi2Functions.fmi2SetIntegerParameter(fmi2me, {"+integerParametersVRs+"}, {"+integerParametersNames+"});"%>
     <%if not stringEq(booleanParametersVRs, "") then "flowParamsStart := fmi2Functions.fmi2SetBooleanParameter(fmi2me, {"+booleanParametersVRs+"}, {"+booleanParametersNames+"});"%>
     <%if not stringEq(stringParametersVRs, "") then "flowParamsStart := fmi2Functions.fmi2SetStringParameter(fmi2me, {"+stringParametersVRs+"}, {"+stringParametersNames+"});"%>
-    flowInitInputs := 1;
   initial equation
     <%if not stringEq(realDependentParametersVRs, "") then "{"+realDependentParametersNames+"} = fmi2Functions.fmi2GetReal(fmi2me, {"+realDependentParametersVRs+"}, flowInitialized);"%>
     <%if not stringEq(integerDependentParametersVRs, "") then "{"+integerDependentParametersNames+"} = fmi2Functions.fmi2GetInteger(fmi2me, {"+integerDependentParametersVRs+"}, flowInitialized);"%>
     <%if not stringEq(booleanDependentParametersVRs, "") then "{"+booleanDependentParametersNames+"} = fmi2Functions.fmi2GetBoolean(fmi2me, {"+booleanDependentParametersVRs+"}, flowInitialized);"%>
     <%if not stringEq(stringDependentParametersVRs, "") then "{"+stringDependentParametersNames+"} = fmi2Functions.fmi2GetString(fmi2me, {"+stringDependentParametersVRs+"}, flowInitialized);"%>
   algorithm
-    flowTime := fmi2Functions.fmi2SetTime(fmi2me, time, flowInitialized);
+    flowTime := if not initial() then fmi2Functions.fmi2SetTime(fmi2me, time, flowInitialized) else time;
     /* algorithm section ensures that inputs to fmi (if any) are set directly after the new time is set */
     <%if not stringEq(realInputVariablesVRs, "") then "realInputVariables := fmi2Functions.fmi2SetReal(fmi2me, {"+realInputVariablesVRs+"}, {"+realInputVariablesNames+"});"%>
     <%if not stringEq(integerInputVariablesVRs, "") then "integerInputVariables := fmi2Functions.fmi2SetInteger(fmi2me, {"+integerInputVariablesVRs+"}, {"+integerInputVariablesNames+"});"%>
@@ -2114,7 +2200,12 @@ case FMIIMPORT(fmiInfo=INFO(__),fmiExperimentAnnotation=EXPERIMENTANNOTATION(__)
     when {triggerDSSEvent > flowStatesInputs, pre(nextEventTime) < time, terminal()} then
   >>
   %>
-      newStatesAvailable := fmi2Functions.fmi2EventUpdate(fmi2me);
+      fmi2Functions.fmi2StartEventUpdate(fmi2me);
+      <%if not stringEq(realEventInputVariablesVRs, "") then "realEventInputVariables := fmi2Functions.fmi2SetReal(fmi2me, {"+realEventInputVariablesVRs+"}, {"+realEventInputVariablesNames+"});"%>
+      <%if not stringEq(integerEventInputVariablesVRs, "") then "integerEventInputVariables := fmi2Functions.fmi2SetInteger(fmi2me, {"+integerEventInputVariablesVRs+"}, {"+integerEventInputVariablesNames+"});"%>
+      <%if not stringEq(booleanEventInputVariablesVRs, "") then "booleanEventInputVariables := fmi2Functions.fmi2SetBoolean(fmi2me, {"+booleanEventInputVariablesVRs+"}, {"+booleanEventInputVariablesNames+"});"%>
+      <%if not stringEq(stringEventInputVariablesVRs, "") then "stringEventInputVariables := fmi2Functions.fmi2SetString(fmi2me, {"+stringEventInputVariablesVRs+"}, {"+stringEventStartVariablesNames+"});"%>
+      newStatesAvailable := fmi2Functions.fmi2EndEventUpdate(fmi2me);
       nextEventTime := fmi2Functions.fmi2nextEventTime(fmi2me, flowStatesInputs);
   <%if intGt(listLength(fmiInfo.fmiNumberOfContinuousStates), 0) then
   <<
@@ -2164,6 +2255,18 @@ case FMIIMPORT(fmiInfo=INFO(__),fmiExperimentAnnotation=EXPERIMENTANNOTATION(__)
     <%dumpFMITypeDefinitionsArrayMappingFunctions(fmiTypeDefinitionsList)%>
 
     package fmi2Functions
+      function fmi2SetupExperiment
+        input FMI2ModelExchange fmi2me;
+        input Boolean inToleranceDefined;
+        input Real inTolerance;
+        input Real inStartTime;
+        input Boolean inStopTimeDefined;
+        input Real inStopTime;
+        input Real inFlow;
+        output Real outFlow = inFlow;
+        external "C" fmi2SetupExperiment_OMC(fmi2me, inToleranceDefined, inTolerance, inStartTime, inStopTimeDefined, inStopTime) annotation(Library = {"OpenModelicaFMIRuntimeC", "fmilib"});
+      end fmi2SetupExperiment;
+
       function fmi2SetTime
         input FMI2ModelExchange fmi2me;
         input Real inTime;
@@ -2314,11 +2417,16 @@ case FMIIMPORT(fmiInfo=INFO(__),fmiExperimentAnnotation=EXPERIMENTANNOTATION(__)
         external "C" fmi2SetString_OMC(fmi2me, size(stringValueReferences, 1), stringValueReferences, stringValues, 1) annotation(Library = {"OpenModelicaFMIRuntimeC", "fmilib"});
       end fmi2SetStringParameter;
 
-      function fmi2EventUpdate
+      function fmi2StartEventUpdate
+        input FMI2ModelExchange fmi2me;
+        external "C" fmi2StartEventUpdate_OMC(fmi2me) annotation(Library = {"OpenModelicaFMIRuntimeC", "fmilib"});
+      end fmi2StartEventUpdate;
+
+      function fmi2EndEventUpdate
         input FMI2ModelExchange fmi2me;
         output Boolean outNewStatesAvailable;
-        external "C" outNewStatesAvailable = fmi2EventUpdate_OMC(fmi2me) annotation(Library = {"OpenModelicaFMIRuntimeC", "fmilib"});
-      end fmi2EventUpdate;
+        external "C" outNewStatesAvailable = fmi2EndEventUpdate_OMC(fmi2me) annotation(Library = {"OpenModelicaFMIRuntimeC", "fmilib"});
+      end fmi2EndEventUpdate;
 
       function fmi2nextEventTime
         input FMI2ModelExchange fmi2me;
@@ -2334,11 +2442,11 @@ case FMIIMPORT(fmiInfo=INFO(__),fmiExperimentAnnotation=EXPERIMENTANNOTATION(__)
         external "C" outCallEventUpdate = fmi2CompletedIntegratorStep_OMC(fmi2me, inFlowStates) annotation(Library = {"OpenModelicaFMIRuntimeC", "fmilib"});
       end fmi2CompletedIntegratorStep;
     end fmi2Functions;
-  end <%fmiInfo.fmiModelIdentifier%>_<%getFMIType(fmiInfo)%>_FMU;
+  end <%if stringEq(name, "") then fmiInfo.fmiModelIdentifier+"_"+getFMIType(fmiInfo)+"_FMU" else name%>;
   >>
 end importFMU2ModelExchange;
 
-template importFMU1CoSimulationStandAlone(FmiImport fmi)
+template importFMU1CoSimulationStandAlone(FmiImport fmi, String name)
  "Generates Modelica code for FMI Co-simulation stand alone version 1.0"
 ::=
 match fmi
@@ -2396,7 +2504,7 @@ case FMIIMPORT(fmiInfo=INFO(__),fmiExperimentAnnotation=EXPERIMENTANNOTATION(__)
   let stringOutputVariablesVRs = dumpVariables(fmiModelVariablesList, "string", "output", false, 1, "1.0")
   let stringOutputVariablesNames = dumpVariables(fmiModelVariablesList, "string", "output", false, 2, "1.0")
   <<
-  model <%fmiInfo.fmiModelIdentifier%>_<%getFMIType(fmiInfo)%>_FMU<%if stringEq(fmiInfo.fmiDescription, "") then "" else " \""+fmiInfo.fmiDescription+"\""%>
+  model <%if stringEq(name, "") then fmiInfo.fmiModelIdentifier+"_"+getFMIType(fmiInfo)+"_FMU" else name%><%if stringEq(fmiInfo.fmiDescription, "") then "" else " \""+fmiInfo.fmiDescription+"\""%>
     <%dumpFMITypeDefinitions(fmiTypeDefinitionsList)%>
     constant String fmuLocation = "file://<%fmuWorkingDirectory%>/resources";
     constant String fmuWorkingDir = "<%fmuWorkingDirectory%>";
@@ -2560,7 +2668,7 @@ case FMIIMPORT(fmiInfo=INFO(__),fmiExperimentAnnotation=EXPERIMENTANNOTATION(__)
         external "C" fmi1SetString_OMC(fmi1cs, size(stringValuesReferences, 1), stringValuesReferences, stringValues, out_Values, 2) annotation(Library = {"OpenModelicaFMIRuntimeC", "fmilib"});
       end fmi1SetString;
     end fmi1Functions;
-  end <%fmiInfo.fmiModelIdentifier%>_<%getFMIType(fmiInfo)%>_FMU;
+  end <%if stringEq(name, "") then fmiInfo.fmiModelIdentifier+"_"+getFMIType(fmiInfo)+"_FMU" else name%>;
   >>
 end importFMU1CoSimulationStandAlone;
 

@@ -3,7 +3,7 @@ Introduction
 
 .. highlight:: modelica
 
-The |omlogo| system described in this document has both short-term
+The OpenModelica system described in this document has both short-term
 and long-term goals:
 
 -  The short-term goal is to develop an efficient interactive
@@ -176,8 +176,8 @@ Interactive Session with Examples
 ---------------------------------
 
 The following is an interactive session using the interactive session
-handler in the OpenModelica environment, called OMShell – the
-OpenModelica Shell). Most of these examples are also available in the
+handler in the OpenModelica environment, called OMShell - the
+OpenModelica Shell. Most of these examples are also available in the
 :ref:`omnotebook` UsersGuideExamples.onb as well as the testmodels in:
 
 .. omc-mos ::
@@ -193,9 +193,10 @@ The following commands were run using OpenModelica version:
 Starting the Interactive Session
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The Windows version which at installation is made available in the start
-menu as OpenModelica->OpenModelica Shell which responds with an
-interaction window:
+Under Windows, go to the Start Menu and run OpenModelica->OpenModelica Shell
+which responds with an interaction window.
+
+Under Linux, run ``OMShell-terminal`` to start the interactive session at the prompt.
 
 We enter an assignment of a vector expression, created by the range
 construction expression 1:12, to be stored in the variable x. The value
@@ -449,7 +450,7 @@ Now, first clear all loaded libraries and models:
 
   clear()
 
-List the loaded models – nothing left:
+List the loaded models - nothing left:
 
 .. omc-mos ::
 
@@ -959,13 +960,13 @@ Running the compiler from command line
 The OpenModelica compiler can also be used from command line, in Windows cmd.exe or a Unix shell.
 The following examples assume omc is on the PATH; if it is not, you can run :code:`C:\\OpenModelica 1.16.0\\build\\bin\\omc.exe` or similar (depending on where you installed OpenModelica).
 
-Example Session 1 – obtaining information about command line parameters
+Example Session 1 - obtaining information about command line parameters
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. command-output :: omc --help
   :ellipsis: 6,-2
 
-Example Session 2 – create an TestModel.mo file and run omc on it
+Example Session 2 - create an TestModel.mo file and run omc on it
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. literalinclude:: TestModel.mo
@@ -973,7 +974,7 @@ Example Session 2 – create an TestModel.mo file and run omc on it
 
 .. command-output :: omc TestModel.mo
 
-Example Session 3 – create a mos-script and run omc on it
+Example Session 3 - create a mos-script and run omc on it
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. literalinclude:: TestScript.mos
@@ -987,8 +988,3 @@ the compiler:
 
 .. command-output :: omc --showErrorMessages -d=failtrace TestScript.mos
   :ellipsis: 4,-4
-
-.. |omlogo| image:: logo.*
-  :alt: OpenModelica logotype
-  :height: 14pt
-  :target: https://openmodelica.org

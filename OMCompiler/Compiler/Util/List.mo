@@ -100,7 +100,7 @@ import Array;
 import MetaModelica.Dangerous.{listReverseInPlace, arrayGetNoBoundsChecking, arrayUpdateNoBoundsChecking, arrayCreateNoInit};
 import MetaModelica.Dangerous;
 import DoubleEnded;
-import GC;
+import GCExt;
 
 public function create<T>
   "Creates a list from an element."
@@ -129,6 +129,21 @@ algorithm
     i := i + 1;
   end while;
 end fill;
+
+public function repeat<T>
+  "Returns a list of n replications of input lst.
+     Example: fill({2, 1}, 3) => {2, 1, 2, 1, 2, 1}"
+  input list<T> inElement;
+  input Integer inCount;
+  output list<T> outList = {};
+protected
+  Integer i = 0;
+algorithm
+  while i < inCount loop
+    outList := listAppend(inElement, outList);
+    i := i + 1;
+  end while;
+end repeat;
 
 public function intRange
   "Returns a list of n integers from 1 to inStop.
@@ -713,24 +728,29 @@ algorithm
  element := listGet(inList, index);
 end getIndexFirst;
 
+public function getAtIndexLst<T>
+  "zero based"
+  input list<T> lst;
+  input list<Integer> positions;
+  input Boolean zeroBased = false;
+  output list<T> olst = {};
+protected
+  array<T> arr = listArray(lst);
+  Integer shift = if zeroBased then 1 else 0;
+algorithm
+  for pos in listReverse(positions) loop
+    olst := arr[pos+shift] :: olst;
+  end for;
+end getAtIndexLst;
+
 public function firstN<T>
   "Returns the first N elements of a list, or fails if there are not enough
    elements in the list."
   input list<T> inList;
-  input Integer inN;
-  output list<T> outList = {};
-protected
-  T e;
-  list<T> rest;
+  input Integer N;
+  output list<T> outList;
 algorithm
-  true := (inN >= 0);
-  rest := inList;
-
-  for i in 1:inN loop
-    e :: rest := rest;
-    outList := e :: outList;
-  end for;
-
+  outList := firstN_reverse(inList, N);
   outList := listReverseInPlace(outList);
 end firstN;
 
@@ -744,7 +764,7 @@ protected
   T e;
   list<T> rest;
 algorithm
-  true := (N >= 0);
+  true := N >= 0;
   rest := inList;
 
   for i in 1:N loop
@@ -1093,7 +1113,7 @@ algorithm
       outSorted := v :: outSorted;
     end for;
   end for;
-  GC.free(a1);
+  GCExt.free(a1);
 end countingSort;
 
 public function unique<T>
@@ -1111,7 +1131,7 @@ algorithm
 end unique;
 
 public function uniqueIntN
-  "Takes a list of integes and returns a list with duplicates removed, so that
+  "Takes a list of integers and returns a list with duplicates removed, so that
    each element in the new list is unique. O(listLength(inList))"
   input list<Integer> inList;
   input Integer inN;
@@ -1128,7 +1148,7 @@ algorithm
 
     arrayUpdate(arr, i, false);
   end for;
-  GC.free(arr);
+  GCExt.free(arr);
 end uniqueIntN;
 
 public function uniqueIntNArr
@@ -1707,7 +1727,7 @@ algorithm
     a := addPos(inList1, a, 1);
     a := addPos(inList2, a, 1);
     outResult := intersectionIntVec(a, inList1);
-    GC.free(a);
+    GCExt.free(a);
   else
     outResult := {};
   end if;
@@ -1827,7 +1847,7 @@ algorithm
         outDifference := i :: outDifference;
       end if;
     end for;
-    GC.free(a);
+    GCExt.free(a);
   end if;
 end setDifferenceIntN;
 
@@ -1895,7 +1915,7 @@ algorithm
         outUnion := i :: outUnion;
       end if;
     end for;
-    GC.free(a);
+    GCExt.free(a);
   end if;
 end unionIntN;
 
@@ -3295,7 +3315,7 @@ algorithm
 end mapBoolOr;
 
 public function mapBoolAnd<TI>
-  "Maps each element of a inList to Boolean type with inFunc. Stops mapping at first occurrence of true return value."
+  "Maps each element of a inList to Boolean type with inFunc. Stops mapping at first occurrence of false return value."
   input list<TI> inList;
   input MapFunc inFunc;
   output Boolean res = false;
@@ -3314,7 +3334,7 @@ algorithm
 end mapBoolAnd;
 
 public function mapMapBoolAnd<TI,TI2>
-  "Maps each element of a inList to Boolean type with inFunc. Stops mapping at first occurrence of true return value."
+  "Maps each element of a inList to Boolean type with inFunc. Stops mapping at first occurrence of false return value."
   input list<TI> inList;
   input MapFunc inFunc;
   input MapBFunc inBFunc;
@@ -6112,6 +6132,28 @@ algorithm
   fail();
 end find;
 
+public function findOption<T>
+  "Returns the first element of a list for which the predicate function return
+   true as an Option, or NONE() if no element is found."
+  input list<T> lst;
+  input Predicate fn;
+  output Option<T> result;
+
+  partial function Predicate
+    input T e;
+    output Boolean matching;
+  end Predicate;
+algorithm
+  for e in lst loop
+    if fn(e) then
+      result := SOME(e);
+      return;
+    end if;
+  end for;
+
+  result := NONE();
+end findOption;
+
 public function find1<T, ArgT1>
   "This function retrieves the first element of a list for which the passed
    function evaluates to true."
@@ -6337,6 +6379,45 @@ algorithm
   outList := append_reverse(outList, rest);
 end deletePositionsSorted;
 
+public function keepPositions<T>
+  "Takes a list and a list of positions, and deletes all other elements from the
+   list. Note that positions are indexed from 0.
+     Example: keepPositions({1, 2, 3, 4, 5}, {2, 0, 3}) => {1, 3, 4}"
+  input list<T> inList;
+  input list<Integer> inPositions;
+  output list<T> outList;
+protected
+  list<Integer> sorted_pos;
+algorithm
+  sorted_pos := sortedUnique(sort(inPositions, intGt), intEq);
+  outList := keepPositionsSorted(inList, sorted_pos);
+end keepPositions;
+
+public function keepPositionsSorted<T>
+  "Takes a list and a sorted list of positions (smallest index first), and
+   deletes all other positions from the list. Note that positions are indexed from 0.
+     Example: deletePositionsSorted({1, 2, 3, 4, 5}, {0, 2, 3}) => {1, 3, 4}"
+  input list<T> inList;
+  input list<Integer> inPositions;
+  output list<T> outList = {};
+protected
+  Integer i = 0;
+  T e;
+  list<T> rest = inList;
+algorithm
+  for pos in inPositions loop
+    while i <> pos loop
+      _ :: rest := rest;
+      i := i + 1;
+    end while;
+
+    e :: rest := rest;
+    outList := e :: outList;
+    i := i + 1;
+  end for;
+  outList := listReverse(outList);
+end keepPositionsSorted;
+
 public function removeMatchesFirst
   "Removes all matching integers that occur first in a list. If the first
    element doesn't match it returns the list."
@@ -6498,26 +6579,35 @@ public function toString<T>
   "
   input list<T> inList;
   input FuncType inPrintFunc;
-  input String inListNameStr "The name of the list.";
-  input String inBeginStr "The start of the list";
-  input String inDelimitStr "The delimiter between list elements.";
-  input String inEndStr "The end of the list.";
-  input Boolean inPrintEmpty "If false, don't output begin and end if the list is empty.";
+  input String inListNameStr  = ""      "The name of the list.";
+  input String inBeginStr     = "{"     "The start of the list";
+  input String inDelimitStr   = ", "    "The delimiter between list elements.";
+  input String inEndStr       = "}"     "The end of the list.";
+  input Boolean inPrintEmpty  = true    "If false, don't output begin and end if the list is empty.";
+  input Integer maxLength = 0           "If > 0, only the first maxLength elements are printed";
   output String outString;
 
   partial function FuncType
     input T inElement;
     output String outString;
   end FuncType;
+protected
+  list<T> lst = inList;
+  String endStr = inEndStr;
 algorithm
-  outString := match(inList, inPrintEmpty)
+  if maxLength > 0 and listLength(lst) > maxLength then
+    lst := firstN(lst, maxLength);
+    endStr := stringAppendList({inDelimitStr, "...", endStr});
+  end if;
+
+  outString := match(lst, inPrintEmpty)
     local
       String str;
 
     // Empty list and inPrintEmpty true => concatenate the list name, begin
     // string and end string.
     case ({}, true)
-      then stringAppendList({inListNameStr, inBeginStr, inEndStr});
+      then stringAppendList({inListNameStr, inBeginStr, endStr});
 
     // Empty list and inPrintEmpty false => output only list name.
     case ({}, false)
@@ -6525,8 +6615,8 @@ algorithm
 
     else
       equation
-        str = stringDelimitList(map(inList, inPrintFunc), inDelimitStr);
-        str = stringAppendList({inListNameStr, inBeginStr, str, inEndStr});
+        str = stringDelimitList(map(lst, inPrintFunc), inDelimitStr);
+        str = stringAppendList({inListNameStr, inBeginStr, str, endStr});
       then
         str;
 
@@ -7264,6 +7354,50 @@ algorithm
   outResult := true;
 end all;
 
+public function none<T>
+  "Returns true if the given predicate function returns false for all elements in
+   the given list."
+  input list<T> inList;
+  input PredFunc inFunc;
+  output Boolean outResult;
+
+  partial function PredFunc
+    input T inElement;
+    output Boolean outMatch;
+  end PredFunc;
+algorithm
+  for e in inList loop
+    if inFunc(e) then
+      outResult := false;
+      return;
+    end if;
+  end for;
+
+  outResult := true;
+end none;
+
+public function any<T>
+  "Returns true if the given predicate function returns true for any element in
+   the given list."
+  input list<T> inList;
+  input PredFunc inFunc;
+  output Boolean outResult;
+
+  partial function PredFunc
+    input T inElement;
+    output Boolean outMatch;
+  end PredFunc;
+algorithm
+  for e in inList loop
+    if inFunc(e) then
+      outResult := true;
+      return;
+    end if;
+  end for;
+
+  outResult := false;
+end any;
+
 public function separateOnTrue<T>
   "Takes a list of values and a filter function over the values and returns 2
    sub lists of values for which the matching function returns true and false."
@@ -7496,23 +7630,24 @@ algorithm
   end match;
 end allCombinations4;
 
- public function contains<T>
-    input list<T> lst;
-    input T elem;
-    input equalityFunc eqFunc;
-    partial function equalityFunc
-      input T t1;
-      input T t2;
-      output Boolean res;
-    end equalityFunc;
-    output Boolean res = false;
-  algorithm
-    for i in lst loop
-      if eqFunc(i, elem) then
-        res := true;
-        return;
-      end if;
-    end for;
+
+public function contains<T>
+  input list<T> lst;
+  input T elem;
+  input equalityFunc eqFunc;
+  partial function equalityFunc
+    input T t1;
+    input T t2;
+    output Boolean res;
+  end equalityFunc;
+  output Boolean res = false;
+algorithm
+  for i in lst loop
+    if eqFunc(i, elem) then
+      res := true;
+      return;
+    end if;
+  end for;
 end contains;
 
 function minElement<T>

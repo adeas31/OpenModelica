@@ -63,19 +63,9 @@ import List;
 import MetaModelica.Dangerous;
 import Mutable;
 import SCodeUtil;
-import StringUtil;
 import System;
 import Types;
 import Util;
-
-/* =======================================================
- *
- *  Section for type definitions
- *
- * =======================================================
- */
-
-protected constant Real HASHVECFACTOR = 1.4;
 
 /* =======================================================
  *
@@ -195,7 +185,7 @@ public function varStartValue "author: PA
   input BackendDAE.Var inVar;
   output DAE.Exp sv;
 algorithm
-  sv := DAEUtil.getStartAttr(inVar.values);
+  sv := DAEUtil.getStartAttr(inVar.values, inVar.varType);
 end varStartValue;
 
 public function varUnreplaceable "author: lochel
@@ -212,6 +202,14 @@ public function setVarUnreplaceable "author: arun
 algorithm
   outVar.unreplaceable:= value;
 end setVarUnreplaceable;
+
+public function setVarInitNonlinear
+  "sets the unreplaceable attribute of a variable to be false or true"
+  input output BackendDAE.Var var;
+  input Boolean value;
+algorithm
+  var.initNonlinear:= value;
+end setVarInitNonlinear;
 
 public function varStartValueFail "author: Frenkel TUD
   Returns the DAE.StartValue of a variable if there is one.
@@ -265,30 +263,12 @@ public function varStartValueType "author: Frenkel TUD 2012-11
   Returns the DAE.StartValue of a variable. If nothing is set the type specific one is used"
   input BackendDAE.Var v;
   output DAE.Exp sv;
+protected
+  Option<DAE.VariableAttributes> attr;
+  DAE.Type ty;
 algorithm
-  sv := matchcontinue(v)
-    local
-      Option<DAE.VariableAttributes> attr;
-      DAE.Type ty;
-
-    case (BackendDAE.VAR(values=attr)) equation
-      sv = DAEUtil.getStartAttrFail(attr);
-    then sv;
-
-    case BackendDAE.VAR(varType=ty) equation
-      true = Types.isIntegerOrSubTypeInteger(ty);
-    then DAE.ICONST(0);
-
-    case BackendDAE.VAR(varType=ty) equation
-      true = Types.isBooleanOrSubTypeBoolean(ty);
-    then DAE.BCONST(false);
-
-    case BackendDAE.VAR(varType=ty) equation
-      true = Types.isStringOrSubTypeString(ty);
-    then DAE.SCONST("");
-
-    else DAE.RCONST(0.0);
-  end matchcontinue;
+  BackendDAE.VAR(values=attr, varType=ty) := v;
+  sv := DAEUtil.getStartAttr(attr, ty);
 end varStartValueType;
 
 public function varStartValueOption "author: Frenkel TUD
@@ -623,7 +603,6 @@ algorithm
   attr := match(inType)
     case DAE.T_REAL() then DAE.VAR_ATTR_REAL(NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE());
     case DAE.T_INTEGER() then DAE.VAR_ATTR_INT(NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE());
-    case DAE.T_INTEGER() then DAE.VAR_ATTR_INT(NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE());
     case DAE.T_BOOL() then DAE.VAR_ATTR_BOOL(NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE());
     case DAE.T_STRING() then DAE.VAR_ATTR_STRING(NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE());
     case DAE.T_ENUMERATION() then DAE.VAR_ATTR_ENUMERATION(NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE(),NONE());
@@ -819,6 +798,18 @@ algorithm
   end match;
 end varHasUncertainValueRefine;
 
+public function varHasUncertainValuePropagate
+  "Returns true if the specified variable has the attribute uncertain and the
+  value of it is Uncertainty.propagate, false otherwise."
+  input BackendDAE.Var var;
+  output Boolean b;
+algorithm
+  b := match (var)
+    case (BackendDAE.VAR(values=SOME(DAE.VAR_ATTR_REAL(uncertainOption=SOME(DAE.PROPAGATE()))))) then true;
+    else false;
+  end match;
+end varHasUncertainValuePropagate;
+
 public function varDistribution "author: Peter Aronsson, 2012-05
   Returns Distribution record of a variable."
   input BackendDAE.Var var;
@@ -938,6 +929,20 @@ algorithm
     else false;
   end match;
 end isVarDiscrete;
+
+public function isVarNonDifferentiable
+"This functions checks if BackendDAE.Var is not differentiable"
+  input BackendDAE.Var inVar;
+  output Boolean outBoolean;
+algorithm
+  outBoolean := match (inVar)
+    case (BackendDAE.VAR(varKind = BackendDAE.DISCRETE())) then true;
+    case (BackendDAE.VAR(varType = DAE.T_INTEGER())) then true;
+    case (BackendDAE.VAR(varType = DAE.T_BOOL())) then true;
+    case (BackendDAE.VAR(varType = DAE.T_ENUMERATION())) then true;
+    else false;
+  end match;
+end isVarNonDifferentiable;
 
 public function isVarClockedState
 "This functions checks if BackendDAE.Var is a clocked state"
@@ -1248,6 +1253,26 @@ algorithm
   end match;
 end isParam;
 
+public function makeParam
+  "Change variable to parameter"
+  input output BackendDAE.Var var;
+algorithm
+  var.varKind := BackendDAE.PARAM();
+end makeParam;
+
+public function makeParamOutputsOnly
+  "Change variable to parameter"
+  input output BackendDAE.Var var;
+  input output Boolean fixed; // also output for traversing
+algorithm
+  var.varKind := BackendDAE.PARAM();
+  var := setHideResult(var, SOME(DAE.BCONST(true)));
+  var.values := if isSome(var.values) then var.values else SOME(getVariableAttributefromType(var.varType));
+  if isNone(DAEUtil.getFixedAttr(var.values)) then
+    var.values := DAEUtil.setFixedAttr(var.values, SOME(DAE.BCONST(fixed)));
+  end if;
+end makeParamOutputsOnly;
+
 public function isParamOrConstant
 "Return true if variable is parameter or constant"
   input BackendDAE.Var invar;
@@ -1412,6 +1437,21 @@ algorithm
   end match;
 end isCSEVar;
 
+public function isRESVar
+  input BackendDAE.Var inVar;
+  output Boolean outBoolean;
+algorithm
+  outBoolean := match (inVar.varName)
+    local
+      String s;
+    case(DAE.CREF_IDENT(ident=s))
+     then (stringLength(s) > 3 and substring(s, 1, 4) == "$res");
+    case(DAE.CREF_QUAL(ident=s))
+     then (stringLength(s) > 3 and substring(s, 1, 4) == "$res");
+    else false;
+  end match;
+end isRESVar;
+
 public function hasMayerTermAnno
 "author: Vitalij Ruge
  Return true if variable has isMayer=true annotation"
@@ -1533,6 +1573,16 @@ algorithm
   end match;
 end isOutputVar;
 
+public function isRealVar "Return true if variable is type Real"
+  input BackendDAE.Var inVar;
+  output Boolean outBoolean;
+algorithm
+  outBoolean := match (inVar)
+    case (BackendDAE.VAR(varType = DAE.T_REAL())) then true;
+    else false;
+  end match;
+end isRealVar;
+
 public function isRealOutputVar "Return true if variable is declared as output and type is Real. Note that the output
   attribute sticks with a variable even if it is originating from a sub
   component, which is not the case for Dymola."
@@ -1561,24 +1611,25 @@ algorithm
 end isOutput;
 
 public function isProtectedVar
- "Returns the DAE.Protected attribute, overridden with HideResult annotation"
+ "Returns the DAE.Protected attribute"
   input BackendDAE.Var v;
-  output Boolean hidden;
-protected
-  SCode.Annotation anno;
-  Absyn.Exp val;
-algorithm
-  try
-    BackendDAE.VAR(comment=SOME(SCode.COMMENT(annotation_ = SOME(anno)))) := v;
-    val := SCodeUtil.getNamedAnnotation(anno, "HideResult");
-    hidden := match(val)
-      case Absyn.BOOL(true) then true;
-      else false;
-    end match;
-  else
-    hidden := DAEUtil.getProtectedAttr(v.values);
-  end try;
+  output Boolean hidden = DAEUtil.getProtectedAttr(v.values);
 end isProtectedVar;
+
+public function isProtected
+ "Returns the DAE.isProtected attribute."
+  input BackendDAE.Var v;
+  output Boolean b;
+algorithm
+  b := match v.values
+    case SOME(DAE.VAR_ATTR_REAL(isProtected=SOME(b))) then b;
+    case SOME(DAE.VAR_ATTR_INT(isProtected=SOME(b))) then b;
+    case SOME(DAE.VAR_ATTR_BOOL(isProtected=SOME(b))) then b;
+    case SOME(DAE.VAR_ATTR_STRING(isProtected=SOME(b))) then b;
+    case SOME(DAE.VAR_ATTR_ENUMERATION(isProtected=SOME(b))) then b;
+    else false;
+  end match;
+end isProtected;
 
 public function hasVarEvaluateAnnotationOrFinal
   input BackendDAE.Var inVar;
@@ -1703,7 +1754,7 @@ algorithm
   cr := varCref(inVar);
   cr := ComponentReference.makeCrefQual(BackendDAE.partialDerivativeNamePrefix, DAE.T_REAL_DEFAULT, {}, cr);
   outVar := copyVarNewName(cr,inVar);
-  outVar := setVarKind(outVar,BackendDAE.JAC_DIFF_VAR());
+  outVar := setVarKind(outVar,BackendDAE.JAC_TMP_VAR());
 end createpDerVar;
 
 public function createClockedState
@@ -1715,7 +1766,10 @@ protected
 algorithm
   cr := ComponentReference.makeCrefQual(DAE.previousNamePrefix, DAE.T_REAL_DEFAULT, {}, inVar.varName);
   outVar := copyVarNewName(cr,inVar);
-  outVar := setVarKind(outVar,BackendDAE.JAC_DIFF_VAR());
+  outVar := setVarKind(outVar,BackendDAE.JAC_TMP_VAR());
+
+  // HACK hide previous(v) in results because it's not calculated right
+  outVar := setHideResult(outVar, SOME(DAE.BCONST(true)));
 end createClockedState;
 
 public function createAliasDerVar
@@ -1729,7 +1783,7 @@ algorithm
   outVar := BackendDAE.VAR(cr, BackendDAE.VARIABLE(),DAE.BIDIR(),DAE.NON_PARALLEL(),DAE.T_REAL_DEFAULT,NONE(),NONE(),{},
                           DAE.emptyElementSource,
                           NONE(),
-                          NONE(), DAE.BCONST(false), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), false);
+                          NONE(), NONE(), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), false, false);
 end createAliasDerVar;
 
 public function createVar
@@ -1770,15 +1824,14 @@ algorithm
       DAE.T_COMPLEX(complexClassType=ClassInf.RECORD(path)) = inType;
       source = DAE.SOURCE(AbsynUtil.dummyInfo, {}, DAE.NOCOMPPRE(), {}, {path}, {}, {});
       varKind = if Types.isDiscreteType(inType) then BackendDAE.DISCRETE() else BackendDAE.VARIABLE();
-      outVar = BackendDAE.VAR(inCref, varKind, DAE.BIDIR(), DAE.NON_PARALLEL(), inType, NONE(), NONE(), {}, source, DAEUtil.setProtectedAttr(NONE(), true), NONE(), DAE.BCONST(false), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), true);
+      outVar = BackendDAE.VAR(inCref, varKind, DAE.BIDIR(), DAE.NON_PARALLEL(), inType, NONE(), NONE(), {}, source, DAEUtil.setProtectedAttr(NONE(), true), SOME(BackendDAE.NEVER()), SOME(DAE.BCONST(true)), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), true,false);
     then outVar;
 
     else equation
       varKind = if Types.isDiscreteType(inType) then BackendDAE.DISCRETE() else BackendDAE.VARIABLE();
-      outVar = BackendDAE.VAR(inCref, varKind, DAE.BIDIR(), DAE.NON_PARALLEL(), inType, NONE(), NONE(), {}, DAE.emptyElementSource, DAEUtil.setProtectedAttr(NONE(), true), NONE(), DAE.BCONST(false), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), true);
+      outVar = BackendDAE.VAR(inCref, varKind, DAE.BIDIR(), DAE.NON_PARALLEL(), inType, NONE(), NONE(), {}, DAE.emptyElementSource, DAEUtil.setProtectedAttr(NONE(), true), SOME(BackendDAE.NEVER()), SOME(DAE.BCONST(true)), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), true,false);
     then outVar;
   end match;
-  outVar := setHideResult(outVar, DAE.BCONST(true));
 end createCSEVar;
 
 public function generateVar
@@ -1790,7 +1843,7 @@ public function generateVar
   input Option<DAE.VariableAttributes> attr;
   output BackendDAE.Var var;
 algorithm
-  var := BackendDAE.VAR(cr,varKind,DAE.BIDIR(),DAE.NON_PARALLEL(),varType,NONE(),NONE(),subs,DAE.emptyElementSource,attr,NONE(),DAE.BCONST(false),NONE(),DAE.NON_CONNECTOR(),DAE.NOT_INNER_OUTER(),false);
+  var := BackendDAE.VAR(cr,varKind,DAE.BIDIR(),DAE.NON_PARALLEL(),varType,NONE(),NONE(),subs,DAE.emptyElementSource,attr,NONE(),NONE(),NONE(),DAE.NON_CONNECTOR(),DAE.NOT_INNER_OUTER(),false,false);
 end generateVar;
 
 public function generateArrayVar
@@ -1827,7 +1880,7 @@ algorithm
         vars;
     case (_,_,_,_)
       equation
-        var = BackendDAE.VAR(name,varKind,DAE.BIDIR(),DAE.NON_PARALLEL(),varType,NONE(),NONE(),{},DAE.emptyElementSource,attr,NONE(),DAE.BCONST(false),NONE(),DAE.NON_CONNECTOR(),DAE.NOT_INNER_OUTER(), false);
+        var = BackendDAE.VAR(name,varKind,DAE.BIDIR(),DAE.NON_PARALLEL(),varType,NONE(),NONE(),{},DAE.emptyElementSource,attr,NONE(),NONE(),NONE(),DAE.NON_CONNECTOR(),DAE.NOT_INNER_OUTER(), false,false);
       then
         {var};
   end match;
@@ -1851,12 +1904,12 @@ algorithm
       DAE.T_COMPLEX(complexClassType=ClassInf.RECORD(path)) = inType;
       source = DAE.SOURCE(AbsynUtil.dummyInfo, {}, DAE.NOCOMPPRE(), {}, {path}, {}, {});
       varKind = if Types.isDiscreteType(inType) then BackendDAE.DISCRETE() else BackendDAE.VARIABLE();
-      outVar = BackendDAE.VAR(inCref, varKind, DAE.BIDIR(), DAE.NON_PARALLEL(), inType, NONE(), NONE(), inArryDim, source, DAEUtil.setProtectedAttr(NONE(), true), NONE(), DAE.BCONST(false), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), true);
+      outVar = BackendDAE.VAR(inCref, varKind, DAE.BIDIR(), DAE.NON_PARALLEL(), inType, NONE(), NONE(), inArryDim, source, DAEUtil.setProtectedAttr(NONE(), true), SOME(BackendDAE.NEVER()), SOME(DAE.BCONST(true)), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), true, false);
     then outVar;
 
     else equation
       varKind = if Types.isDiscreteType(inType) then BackendDAE.DISCRETE() else BackendDAE.VARIABLE();
-      outVar = BackendDAE.VAR(inCref, varKind, DAE.BIDIR(), DAE.NON_PARALLEL(), inType, NONE(), NONE(), inArryDim, DAE.emptyElementSource, DAEUtil.setProtectedAttr(NONE(), true), NONE(), DAE.BCONST(false), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), true);
+      outVar = BackendDAE.VAR(inCref, varKind, DAE.BIDIR(), DAE.NON_PARALLEL(), inType, NONE(), NONE(), inArryDim, DAE.emptyElementSource, DAEUtil.setProtectedAttr(NONE(), true), SOME(BackendDAE.NEVER()), SOME(DAE.BCONST(true)), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), true, false);
     then outVar;
   end match;
 end createCSEArrayVar;
@@ -1930,7 +1983,7 @@ end setBindExp;
 public function setHideResult "Sets BackendDAE.VAR.hideResult expression.
 author: vwaurich 10 2016"
   input BackendDAE.Var varIn;
-  input DAE.Exp hideResultB;
+  input Option<DAE.Exp> hideResultB;
   output BackendDAE.Var varOut=varIn;
 algorithm
   varOut.hideResult := hideResultB;
@@ -1960,22 +2013,13 @@ end getVarDirection;
 public function getVarNominalValue "
   Returns the DAE.NominalValue or default value of a variable."
   input BackendDAE.Var InVar;
-  output DAE.Exp nom;
-algorithm
-  nom := match(InVar)
-         local Option<DAE.VariableAttributes> attr;
-           case(BackendDAE.VAR(values = attr)) then DAEUtil.getNominalAttr(attr);
-         end match;
+  output DAE.Exp nom = DAEUtil.getNominalAttr(InVar.values);
 end getVarNominalValue;
 
 public function getVarKind "
   Get the DAE.VarKind of a variable"
   input BackendDAE.Var inVar;
-  output BackendDAE.VarKind varKind;
-algorithm
-  varKind := match (inVar)
-    case (BackendDAE.VAR(varKind = varKind)) then  varKind;
-  end match;
+  output BackendDAE.VarKind varKind = inVar.varKind;
 end getVarKind;
 
 public function getVarKindForVar"fetch the varkind for an indexed var inside the variable-array."
@@ -1989,36 +2033,26 @@ algorithm
   kind := getVarKind(var);
 end getVarKindForVar;
 
-public function isVarOnTopLevelAndOutput "and has the DAE.VarDirection = OUTPUT
-  The check for top-model is done by spliting the name at \'.\' and
-  check if the list-length is 1"
+public function isVarOnTopLevelAndOutput "has the DAE.VarDirection = OUTPUT
+  Don't check for top level here as this is done by NFConvertDAE.makeDAEVar.
+  Otherwise the list of model variables may contradict with model structure, e.g. with --nonStdExposeLocalIOs."
   input BackendDAE.Var inVar;
-  output Boolean outBoolean;
-algorithm
-  outBoolean:=
-  match(inVar)
-    local
-      DAE.ComponentRef cr;
-      DAE.VarDirection dir;
-      DAE.ConnectorType ct;
-    case (BackendDAE.VAR(varName = cr,varDirection = dir,connectorType = ct))
-      then DAEUtil.topLevelOutput(cr, dir, ct);
-  end match;
+  //output Boolean outBoolean = DAEUtil.topLevelOutput(inVar.varName, inVar.varDirection, inVar.connectorType);
+  output Boolean outBoolean = isOutputVar(inVar);
 end isVarOnTopLevelAndOutput;
 
-public function isVarOnTopLevelAndInput "and has the DAE.VarDirection = INPUT
-  The check for top-model is done by splitting the name at '.' and checking if
-  the list-length is 1."
+public function isVarOnTopLevelAndInput "has the DAE.VarDirection = INPUT
+  Don't check for top level here as this is done by NFConvertDAE.makeDAEVar.
+  Otherwise the list of model variables may contradict with model structure, e.g. with --nonStdExposeLocalIOs."
   input BackendDAE.Var inVar;
-  output Boolean outBoolean = DAEUtil.topLevelInput(inVar.varName, inVar.varDirection, inVar.connectorType);
+  //output Boolean outBoolean = DAEUtil.topLevelInput(inVar.varName, inVar.varDirection, inVar.connectorType);
+  output Boolean outBoolean = isInput(inVar);
 end isVarOnTopLevelAndInput;
 
 public function isVarOnTopLevelAndInputNoDerInput
     input BackendDAE.Var inVar;
     output Boolean outBoolean = isVarOnTopLevelAndInput(inVar) and not isRealOptimizeDerInput(inVar);
 end isVarOnTopLevelAndInputNoDerInput;
-
-
 
 public function isFinalVar "Returns true if the variable is final."
   input BackendDAE.Var inVar;
@@ -2048,7 +2082,7 @@ end getVarType;
 
 public function getMinMaxAsserts "author: Frenkel TUD 2011-03"
   input BackendDAE.Var inVar;
-  input list<DAE.Algorithm> inAsserts;
+  input list<DAE.Algorithm> inAsserts = {};
   output BackendDAE.Var outVar = inVar;
   output list<DAE.Algorithm> outAsserts;
 algorithm
@@ -2120,64 +2154,22 @@ end getMinMaxAsserts1;
 protected function getMinMaxAsserts1Str "author: Frenkel TUD 2011-03"
   input Option<DAE.Exp> omin,omax;
   input String varStr;
-  input Boolean nominal=false;
   output String msg;
-protected
-  String vstr = if nominal then "Nominal variable " else "Variable ";
 algorithm
   msg := match (omin,omax)
     local
       DAE.Exp min, max;
 
     case (SOME(min),SOME(max))
-    then StringUtil.stringAppend9(vstr,"violating min/max constraint: ",ExpressionDump.printExpStr(min)," <= ",varStr," <= ",ExpressionDump.printExpStr(max),", has value: ");
+    then "Variable violating min/max constraint: " + ExpressionDump.printExpStr(min) + " <= " + varStr + " <= " + ExpressionDump.printExpStr(max) + ", has value: ";
 
     case (SOME(min),NONE())
-    then StringUtil.stringAppend9(vstr,"violating min constraint: ",ExpressionDump.printExpStr(min)," <= ",varStr,", has value: ");
+    then "Variable violating min constraint: " + ExpressionDump.printExpStr(min) + " <= " + varStr + ", has value: ";
 
     case (NONE(),SOME(max))
-    then StringUtil.stringAppend9(vstr,"violating max constraint: ",varStr," <= ",ExpressionDump.printExpStr(max),", has value: ");
+    then "Variable violating max constraint: " + varStr + " <= " + ExpressionDump.printExpStr(max) + ", has value: ";
   end match;
 end getMinMaxAsserts1Str;
-
-public function getNominalAssert "author: Frenkel TUD 2011-03"
-  input BackendDAE.Var inVar;
-  input list<DAE.Algorithm> inAsserts;
-  output BackendDAE.Var outVar = inVar;
-  output list<DAE.Algorithm> outAsserts;
-algorithm
-  outAsserts := matchcontinue(inVar)
-    local
-      DAE.Exp e, cond, msg;
-      Option<DAE.Exp> min, max;
-      String str, varStr, format;
-      DAE.Type tp;
-      DAE.ComponentRef name;
-      Option<DAE.VariableAttributes> attr;
-      BackendDAE.Type varType;
-      DAE.ElementSource source;
-
-    case BackendDAE.VAR(varKind=BackendDAE.CONST())
-    then inAsserts;
-
-    case BackendDAE.VAR(varName=name, values=attr as SOME(DAE.VAR_ATTR_REAL(nominal=SOME(e))), varType=varType, source=source) equation
-      (min, max) = DAEUtil.getMinMaxValues(attr);
-      tp = BackendDAEUtil.makeExpType(varType);
-
-      // do not add if const true
-      cond = getMinMaxAsserts1(min, max, e, tp);
-      (cond, _) = ExpressionSimplify.simplify(cond);
-      false = Expression.isConstTrue(cond);
-      str = getMinMaxAsserts1Str(min, max, ComponentReference.printComponentRefStr(name), nominal=true);
-      // if is real use %g otherwise use %d (ints and enums)
-      format = if Types.isRealOrSubTypeReal(tp) then "g" else "d";
-      msg = DAE.BINARY(DAE.SCONST(str), DAE.ADD(DAE.T_STRING_DEFAULT), DAE.CALL(Absyn.IDENT("String"), {e, DAE.SCONST(format)}, DAE.callAttrBuiltinString));
-      BackendDAEUtil.checkAssertCondition(cond, msg, DAE.ASSERTIONLEVEL_WARNING, ElementSource.getElementSourceFileInfo(source));
-    then DAE.ALGORITHM_STMTS({DAE.STMT_ASSERT(cond, msg, DAE.ASSERTIONLEVEL_WARNING, source)})::inAsserts;
-
-    else inAsserts;
-  end matchcontinue;
-end getNominalAssert;
 
 public function varSortFunc "A sorting function (greatherThan) for Variables based on crefs"
   input BackendDAE.Var v1;
@@ -2829,7 +2821,7 @@ protected
 algorithm
   BackendDAE.VARIABLES(indices, arr, buckets, num_vars) := inVariables;
   (arr, outVar as BackendDAE.VAR(varName = cr)) := vararrayDelete(arr, inIndex);
-  hash_idx := ComponentReference.hashComponentRefMod(cr, buckets) + 1;
+  hash_idx := intMod(ComponentReference.hashComponentRef(cr), buckets) + 1;
   cr_indices := indices[hash_idx];
   cr_indices := List.deleteMemberOnTrue(BackendDAE.CREFINDEX(cr, inIndex - 1), cr_indices, removeVar2);
   arrayUpdate(indices, hash_idx, cr_indices);
@@ -2936,7 +2928,7 @@ protected
   DAE.Type tp = ComponentReference.crefLastType(cr);
   DAE.Dimensions dims = Expression.arrayDimension(tp);
 algorithm
- v := BackendDAE.VAR(cr, BackendDAE.VARIABLE(), DAE.BIDIR(), DAE.NON_PARALLEL(), DAE.T_REAL_DEFAULT, NONE(), NONE(), dims, DAE.emptyElementSource, NONE(), NONE(), DAE.BCONST(false), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), false);
+ v := BackendDAE.VAR(cr, BackendDAE.VARIABLE(), DAE.BIDIR(), DAE.NON_PARALLEL(), DAE.T_REAL_DEFAULT, NONE(), NONE(), dims, DAE.emptyElementSource, NONE(), NONE(), NONE(), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), false, false);
 end makeVar;
 
 public function addVarDAE
@@ -3014,7 +3006,7 @@ protected
   Integer hash_idx, arr_idx;
   list<BackendDAE.CrefIndex> indices;
 algorithm
-  hash_idx := ComponentReference.hashComponentRefMod(inVar.varName, inVariables.bucketSize) + 1;
+  hash_idx := intMod(ComponentReference.hashComponentRef(inVar.varName), inVariables.bucketSize) + 1;
   indices := arrayGet(inVariables.crefIndices, hash_idx);
 
   try
@@ -3059,7 +3051,7 @@ protected
   list<BackendDAE.CrefIndex> indices;
 algorithm
   BackendDAE.VARIABLES(hashvec, varr, bsize, num_vars) := inVariables;
-  idx := ComponentReference.hashComponentRefMod(inVar.varName, bsize) + 1;
+  idx := intMod(ComponentReference.hashComponentRef(inVar.varName), bsize) + 1;
   varr := vararrayAdd(varr, inVar);
   indices := hashvec[idx];
   arrayUpdate(hashvec, idx, (BackendDAE.CREFINDEX(inVar.varName, num_vars)::indices));
@@ -3235,7 +3227,7 @@ public function getVarSingle
   The indexes is enumerated from 1..n
   Normally a variable has only one index, but in case of an array variable
   it may have several indexes and several scalar variables,
-  therefore a list of variables and a list of  indexes is returned.
+  therefore a list of variables and a list of indexes is returned.
 
   This function fails if there are more than a single returned value"
   input DAE.ComponentRef cr;
@@ -3347,7 +3339,6 @@ algorithm
       then
         (if referenceEq(subs_1,subs) then inCref else DAE.CREF_IDENT(name, ty, subs_1), b);
 
-    case (DAE.CREF_ITER(), _) then (inCref, iPerformed);
     case (DAE.OPTIMICA_ATTR_INST_CREF(), _) then (inCref, iPerformed);
     case (DAE.WILD(), _) then (inCref, iPerformed);
 
@@ -3467,7 +3458,7 @@ protected
   DAE.ComponentRef cr;
 algorithm
   BackendDAE.VARIABLES(crefIndices=indices, varArr=arr, bucketSize=buckets) := inVariables;
-  hash_idx := ComponentReference.hashComponentRefMod(inCref, buckets) + 1;
+  hash_idx := intMod(ComponentReference.hashComponentRef(inCref), buckets) + 1;
   cr_indices := indices[hash_idx];
   BackendDAE.CREFINDEX(index=outIndex) := List.getMemberOnTrue(inCref, cr_indices, crefIndexEqualCref);
   outIndex := outIndex + 1;
@@ -3918,50 +3909,25 @@ algorithm
   end if;
 end traversingisStateCount;
 
-public function getAllStateDerVarIndexFromVariables
+public function getAllVarIndicesFromVariables
   input BackendDAE.Variables inVariables;
+  input FindFunc isFunc;
   output list<BackendDAE.Var> v_lst;
   output list<Integer> i_lst;
+  partial function FindFunc
+    input BackendDAE.Var inElement;
+    output Boolean result;
+  end FindFunc;
 protected
   array<list<BackendDAE.Var>> v_a;
   array<list<Integer>> i_a;
 algorithm
   v_a := arrayCreate(1,{});
   i_a := arrayCreate(1,{});
-  _ := traverseBackendDAEVars(inVariables,function traversingisXXXFinder(v_lst=v_a,i_lst=i_a,isFunc=isStateDerVar), arrayCreate(1,1));
+  _ := traverseBackendDAEVars(inVariables,function traversingisXXXFinder(v_lst=v_a,i_lst=i_a,isFunc=isFunc), arrayCreate(1,1));
   v_lst := v_a[1];
   i_lst := i_a[1];
-end getAllStateDerVarIndexFromVariables;
-
-public function getAllStateVarIndexFromVariables
-  input BackendDAE.Variables inVariables;
-  output list<BackendDAE.Var> v_lst;
-  output list<Integer> i_lst;
-protected
-  array<list<BackendDAE.Var>> v_a;
-  array<list<Integer>> i_a;
-algorithm
-  v_a := arrayCreate(1,{});
-  i_a := arrayCreate(1,{});
-  _ := traverseBackendDAEVars(inVariables,function traversingisXXXFinder(v_lst=v_a,i_lst=i_a,isFunc=isStateVar), arrayCreate(1,1));
-  v_lst := v_a[1];
-  i_lst := i_a[1];
-end getAllStateVarIndexFromVariables;
-
-public function getAllAlgStateVarIndexFromVariables
-  input BackendDAE.Variables inVariables;
-  output list<BackendDAE.Var> v_lst;
-  output list<Integer> i_lst;
-protected
-  array<list<BackendDAE.Var>> v_a;
-  array<list<Integer>> i_a;
-algorithm
-  v_a := arrayCreate(1,{});
-  i_a := arrayCreate(1,{});
-  _ := traverseBackendDAEVars(inVariables,function traversingisXXXFinder(v_lst=v_a,i_lst=i_a,isFunc=isAlgState), arrayCreate(1,1));
-  v_lst := v_a[1];
-  i_lst := i_a[1];
-end getAllAlgStateVarIndexFromVariables;
+end getAllVarIndicesFromVariables;
 
 protected function traversingisXXXFinder
 "author: hkiel 2016-04"
@@ -4142,6 +4108,9 @@ algorithm
     case(NONE(),_) guard Types.isStringOrSubTypeString(iTy)
       then
         DAE.SCONST("");
+    case(NONE(),_) guard Types.isEnumerationOrSubTypeEnumeration(iTy)
+      then
+        Types.getNthEnumLiteral(iTy, 1);
     else
       DAE.RCONST(0.0);
   end match;
@@ -4555,7 +4524,7 @@ public function varExp
   input BackendDAE.Var inVar;
   output DAE.Exp outExp;
 algorithm
-  outExp := Expression.crefExp(inVar.varName);
+  outExp := Expression.crefToExp(inVar.varName);
 end varExp;
 
 public function varExp2 "same as varExp but adds a der()-call for state derivatives"
@@ -4573,6 +4542,37 @@ algorithm
     else Expression.crefExp(inVar.varName);
   end match;
 end varExp2;
+
+public function scalarizeVariables
+  input output BackendDAE.Variables vars;
+protected
+  list<BackendDAE.Var> var_lst, new_var_lst = {};
+algorithm
+  var_lst := varList(vars);
+  for var in var_lst loop
+    new_var_lst := scalarizeVar(var, new_var_lst);
+  end for;
+  vars := listVar(listReverse(new_var_lst));
+end scalarizeVariables;
+
+public function scalarizeVar
+  input BackendDAE.Var var;
+  input output list<BackendDAE.Var> scalar_vars = {};
+protected
+  list<DAE.ComponentRef> scalar_crefs;
+  BackendDAE.Var scalar_var;
+algorithm
+  if Types.isArray(var.varType) then
+    scalar_crefs := ComponentReference.expandCref(var.varName, false);
+    for cref in scalar_crefs loop
+      scalar_var := BackendVariable.copyVarNewName(cref, var);
+      scalar_var.varType := ComponentReference.crefTypeFull(cref);
+      scalar_vars := scalar_var :: scalar_vars;
+    end for;
+  else
+    scalar_vars := var :: scalar_vars;
+  end if;
+end scalarizeVar;
 
 annotation(__OpenModelica_Interface="backend");
 end BackendVariable;

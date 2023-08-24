@@ -96,6 +96,10 @@ public:
   void setCompilationProcessKilled(bool killed) {mIsCompilationProcessKilled = killed;}
   bool isCompilationProcessKilled() {return mIsCompilationProcessKilled;}
   bool isCompilationProcessRunning() {return mIsCompilationProcessRunning;}
+  QProcess* getPostCompilationProcess() {return mpPostCompilationProcess;}
+  void setPostCompilationProcessKilled(bool killed) {mIsPostCompilationProcessKilled = killed;}
+  bool isPostCompilationProcessKilled() {return mIsPostCompilationProcessKilled;}
+  bool isPostCompilationProcessRunning() {return mIsPostCompilationProcessRunning;}
   QProcess* getSimulationProcess() {return mpSimulationProcess;}
   void setSimulationProcessKilled(bool killed) {mIsSimulationProcessKilled = killed;}
   bool isSimulationProcessKilled() {return mIsSimulationProcessKilled;}
@@ -127,18 +131,24 @@ private:
   QProcess *mpCompilationProcess;
   bool mIsCompilationProcessKilled;
   bool mIsCompilationProcessRunning;
+  QProcess *mpPostCompilationProcess;
+  bool mIsPostCompilationProcessKilled;
+  bool mIsPostCompilationProcessRunning;
   QProcess *mpSimulationProcess;
   bool mIsSimulationProcessKilled;
   bool mIsSimulationProcessRunning;
   QDateTime mResultFileLastModifiedDateTime;
 
   void compileModel();
+  void runPostCompilation();
+  void postCompilationProcessFinishedHelper(int exitCode, QProcess::ExitStatus exitStatus);
   void runSimulationExecutable();
   void writeCompilationOutput(QString output, QColor color);
   void compilationProcessFinishedHelper(int exitCode, QProcess::ExitStatus exitStatus);
   void deleteIntermediateCompilationFiles();
   void writeSimulationOutput(QString output, StringHandler::SimulationMessageType type, bool textFormat);
   void simulationProcessFinishedHelper();
+  QString getPathsFromBatFile(QString fileName);
 private slots:
   void cancelCompilationOrSimulation();
   void openTransformationalDebugger();
@@ -151,6 +161,11 @@ private slots:
   void readCompilationStandardError();
   void compilationProcessError(QProcess::ProcessError error);
   void compilationProcessFinished(int exitCode, QProcess::ExitStatus exitStatus);
+  void postCompilationProcessStarted();
+  void readPostCompilationStandardOutput();
+  void readPostCompilationStandardError();
+  void postCompilationProcessError(QProcess::ProcessError error);
+  void postCompilationProcessFinished(int exitCode, QProcess::ExitStatus exitStatus);
   void simulationProcessStarted();
   void readSimulationStandardOutput();
   void readSimulationStandardError();

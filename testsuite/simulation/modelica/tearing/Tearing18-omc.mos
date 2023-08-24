@@ -26,10 +26,10 @@ val(x8,0.0); getErrorString();
 //     messages = "Simulation execution failed for model: Tearing18
 // Error: Solving non-linear system failed.
 // For more information please use -lv LOG_NLS.
-// stdout            | warning | Integrator attempt to handle a problem with a called assert.
+// LOG_STDOUT        | warning | Integrator attempt to handle a problem with a called assert.
 // Error: Solving non-linear system failed.
 // For more information please use -lv LOG_NLS.
-// stdout            | info    | model terminate | Simulation terminated by an assert at time: 0.085
+// LOG_STDOUT        | info    | model terminate | Simulation terminated by an assert at time: 0.085
 // "
 // end SimulationResult; getErrorString();
 // "Notification: Model statistics after passing the front-end and creating the data structures used by the back-end:
@@ -48,12 +48,13 @@ val(x8,0.0); getErrorString();
 //  * Record equations: 0
 //  * When equations: 0
 //  * If-equations: 0
-//  * Equation systems (linear and non-linear blocks): 0
+//  * Equation systems (not torn): 0
 //  * Torn equation systems: 1
 //  * Mixed (continuous/discrete) equation systems: 0
 // Notification: Torn system details:
-//  * Linear torn systems: 0
-//  * Non-linear torn systems: 1 {1 5}
+//  * Linear torn systems (#iteration vars, #inner vars, density): 0 systems
+//  * Non-linear torn systems (#iteration vars, #inner vars): 1 system
+//    {(1,5)}
 // Warning: There are iteration variables with default zero start attribute. For more information set +d=initialization. In OMEdit Tools->Options->Simulation->OMCFlags, in OMNotebook call setCommandLineOptions("+d=initialization").
 // "
 // 

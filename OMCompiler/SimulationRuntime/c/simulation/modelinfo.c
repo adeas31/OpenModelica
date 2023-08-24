@@ -45,6 +45,7 @@
 #include <assert.h>
 #include <stdint.h>
 #include "../util/read_matlab4.h"
+#include "../util/omc_file.h"
 
 /* UNDEF to debug the gnuplot file */
 #define NO_PIPE
@@ -52,7 +53,7 @@
 /* Returns -1 if the file was not found */
 static size_t fileSize(const char *filename) {
   size_t sz = -1;
-  FILE *f = fopen(filename, "rb");
+  FILE *f = omc_fopen(filename, "rb");
   if(f) {
     fseek(f, 0, SEEK_END);
     sz = ftell(f);
@@ -361,7 +362,7 @@ int printModelInfo(DATA *data, threadData_t *threadData, const char *outputPath,
   if (0 > GC_asprintf(&fullFileName, "%s%s", outputPath, filename)) {
     throwStreamPrint(NULL, "modelinfo.c: Error: can not allocate memory.");
   }
-  FILE *fout = fopen(fullFileName, "w");
+  FILE *fout = omc_fopen(fullFileName, "w");
   FILE *plotCommands;
   time_t t;
   int i;
@@ -370,12 +371,12 @@ int printModelInfo(DATA *data, threadData_t *threadData, const char *outputPath,
   if (0 > GC_asprintf(&fullPlotFile, "%s%s", outputPath, plotfile)) {
     throwStreamPrint(NULL, "modelinfo.c: Error: can not allocate memory.");
   }
-  plotCommands = fopen(fullPlotFile, "w");
+  plotCommands = omc_fopen(fullPlotFile, "w");
 #else
   plotCommands = popen("gnuplot", "w");
 #endif
   if (!plotCommands) {
-    warningStreamPrint(LOG_UTIL, 0, "Plots of profiling data were disabled: %s\n", strerror(errno));
+    warningStreamPrint(LOG_DIVISION, 0, "Plots of profiling data were disabled: %s\n", strerror(errno));
   }
 
   assertStreamPrint(threadData, 0 != fout, "Failed to open %s%s: %s\n", outputPath, filename, strerror(errno));
@@ -400,7 +401,7 @@ int printModelInfo(DATA *data, threadData_t *threadData, const char *outputPath,
   ]>\n");
   if(time(&t) < 0)
   {
-    warningStreamPrint(LOG_UTIL, 0, "time() failed: %s", strerror(errno));
+    warningStreamPrint(LOG_DIVISION, 0, "time() failed: %s", strerror(errno));
     fclose(fout);
 #if defined(__MINGW32__) || defined(_MSC_VER) || defined(NO_PIPE)
       fclose(plotCommands);
@@ -411,7 +412,7 @@ int printModelInfo(DATA *data, threadData_t *threadData, const char *outputPath,
   }
   if(!strftime(buf, 250, "%Y-%m-%d %H:%M:%S", localtime(&t)))
   {
-    warningStreamPrint(LOG_UTIL, 0, "strftime() failed");
+    warningStreamPrint(LOG_DIVISION, 0, "strftime() failed");
     fclose(fout);
     return 1;
   }
@@ -502,12 +503,12 @@ int printModelInfo(DATA *data, threadData_t *threadData, const char *outputPath,
 #endif
       fclose(plotCommands);
       if (measure_time_flag & 4 && 0 != system(buf)) {
-        warningStreamPrint(LOG_UTIL, 0, "Plot command failed: %s\n", buf);
+        warningStreamPrint(LOG_DIVISION, 0, "Plot command failed: %s\n", buf);
       }
     }
 #else
     if(0 != pclose(plotCommands)) {
-      warningStreamPrint(LOG_UTIL, 0, "Warning: Plot command failed\n");
+      warningStreamPrint(LOG_DIVISION, 0, "Warning: Plot command failed\n");
     }
 #endif
     if(omhome)
@@ -610,7 +611,7 @@ int printModelInfoJSON(DATA *data, threadData_t *threadData, const char *outputP
   if (0 > GC_asprintf(&fullFileName, "%s%s", outputPath, filename)) {
     throwStreamPrint(NULL, "modelinfo.c: Error: can not allocate memory.");
   }
-  FILE *fout = fopen(fullFileName, "wb");
+  FILE *fout = omc_fopen(fullFileName, "wb");
   time_t t;
   long i;
   double totalTimeEqs = 0;

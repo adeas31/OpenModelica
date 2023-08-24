@@ -53,14 +53,17 @@ typedef struct _FILE_INFO
   int readonly;
 } FILE_INFO;
 
-#define omc_dummyFileInfo {"",0,0,0,0,0}
+#define omc_dummyFileInfo_val {"",0,0,0,0,0}
+extern const FILE_INFO omc_dummyFileInfo;
 
 DLLExport extern void printInfo(FILE *stream, FILE_INFO info);
+// Defined in omc_error.c
 DLLExport extern void (*omc_assert)(threadData_t*, FILE_INFO, const char*, ...) __attribute__ ((noreturn));
 DLLExport extern void (*omc_assert_warning)(FILE_INFO, const char*, ...);
 DLLExport extern void (*omc_terminate)(FILE_INFO, const char*, ...);
 DLLExport extern void (*omc_throw)(threadData_t*) __attribute__ ((noreturn));
 
+// Defined in simulation_omc_assert.c
 DLLExport extern void (*omc_assert_withEquationIndexes)(threadData_t*,FILE_INFO, const int*, const char*, ...) __attribute__ ((noreturn));
 DLLExport extern void (*omc_assert_warning_withEquationIndexes)(FILE_INFO, const int*, const char*, ...);
 
@@ -84,12 +87,19 @@ enum LOG_STREAM
   LOG_DASSL,
   LOG_DASSL_STATES,
   LOG_DEBUG,
+  LOG_DELAY,
+  LOG_DIVISION,
   LOG_DSS,
   LOG_DSS_JAC,
   LOG_DT,
   LOG_DT_CONS,
   LOG_EVENTS,
   LOG_EVENTS_V,
+  LOG_GBODE,
+  LOG_GBODE_V,
+  LOG_GBODE_NLS,
+  LOG_GBODE_NLS_V,
+  LOG_GBODE_STATES,
   LOG_INIT,
   LOG_INIT_HOMOTOPY,
   LOG_INIT_V,
@@ -106,6 +116,7 @@ enum LOG_STREAM
   LOG_NLS_HOMOTOPY,
   LOG_NLS_JAC,
   LOG_NLS_JAC_TEST,
+  LOG_NLS_NEWTON_DIAG,
   LOG_NLS_RES,
   LOG_NLS_EXTRAPOLATE,
   LOG_RES_INIT,
@@ -123,7 +134,6 @@ enum LOG_STREAM
 #ifdef USE_DEBUG_TRACE
   LOG_TRACE,
 #endif
-  LOG_UTIL,
   LOG_ZEROCROSSINGS,
 
   SIM_LOG_MAX
@@ -172,37 +182,39 @@ extern char logBuffer[2048];
   #define TRACE_POP
 #endif
 
-extern void (*messageFunction)(int type, int stream, int indentNext, char *msg, int subline, const int *indexes);
+extern void (*messageFunction)(int type, int stream, FILE_INFO info, int indentNext, char *msg, int subline, const int *indexes);
 extern void (*messageClose)(int stream);
 extern void (*messageCloseWarning)(int stream);
 
 #if !defined(OMC_MINIMAL_LOGGING)
-extern void va_infoStreamPrint(int stream, int indentNext, const char *format, va_list ap);
 extern void infoStreamPrint(int stream, int indentNext, const char *format, ...) __attribute__ ((format (printf, 3, 4)));
-extern void infoStreamPrintWithEquationIndexes(int stream, int indentNext, const int *indexes, const char *format, ...) __attribute__ ((format (printf, 4, 5)));
+extern void va_infoStreamPrint(int stream, int indentNext, const char *format, va_list ap);
+extern void infoStreamPrintWithEquationIndexes(int stream, FILE_INFO info, int indentNext, const int *indexes, const char *format, ...) __attribute__ ((format (printf, 5, 6)));
 extern void warningStreamPrint(int stream, int indentNext, const char *format, ...) __attribute__ ((format (printf, 3, 4)));
 extern void va_warningStreamPrint(int stream, int indentNext, const char *format,va_list ap);
-extern void warningStreamPrintWithEquationIndexes(int stream, int indentNext, const int *indexes, const char *format, ...) __attribute__ ((format (printf, 4, 5)));
-extern void va_warningStreamPrintWithEquationIndexes(int stream, int indentNext, const int *indexes, const char *format,va_list ap);
+extern void warningStreamPrintWithEquationIndexes(int stream, FILE_INFO info, int indentNext, const int *indexes, const char *format, ...) __attribute__ ((format (printf, 5, 6)));
+extern void va_warningStreamPrintWithEquationIndexes(int stream, FILE_INFO info, int indentNext, const int *indexes, const char *format,va_list ap);
+extern void warningStreamPrintWithLimit(int stream, int indentNext, unsigned long nDisplayed, unsigned long maxWarnDisplays, const char *format, ...) __attribute__ ((format (printf, 5, 6)));
 extern void errorStreamPrint(int stream, int indentNext, const char *format, ...) __attribute__ ((format (printf, 3, 4)));
 extern void va_errorStreamPrint(int stream, int indentNext, const char *format, va_list ap);
-extern void va_errorStreamPrintWithEquationIndexes(int stream, int indentNext, const int *indexes, const char *format,va_list ap);
+extern void va_errorStreamPrintWithEquationIndexes(int stream, FILE_INFO info, int indentNext, const int *indexes, const char *format,va_list ap);
 #else
-static inline void va_infoStreamPrint(int stream, int indentNext, const char *format, va_list ap) {}
 static inline void infoStreamPrint(int stream, int indentNext, const char *format, ...) {}
-static inline void infoStreamPrintWithEquationIndexes(int stream, int indentNext, const int *indexes, const char *format, ...) {}
+static inline void va_infoStreamPrint(int stream, int indentNext, const char *format, va_list ap) {}
+static inline void infoStreamPrintWithEquationIndexes(int stream, FILE_INFO info, int indentNext, const int *indexes, const char *format, ...) {}
 static inline void warningStreamPrint(int stream, int indentNext, const char *format, ...) {}
 static inline void va_warningStreamPrint(int stream, int indentNext, const char *format,va_list ap) {}
-static inline void warningStreamPrintWithEquationIndexes(int stream, int indentNext, const int *indexes, const char *format, ...) {}
-static inline void va_warningStreamPrintWithEquationIndexes(int stream, int indentNext, const int *indexes, const char *format,va_list ap) {}
+static inline void warningStreamPrintWithEquationIndexes(int stream, FILE_INFO info, int indentNext, const int *indexes, const char *format, ...) {}
+static inline void va_warningStreamPrintWithEquationIndexes(int stream, FILE_INFO info, int indentNext, const int *indexes, const char *format,va_list ap) {}
+static inline void warningStreamPrintWithLimit(int stream, int indentNext, unsigned long nDisplayed, unsigned long maxWarnDisplays, const char *format, ...) {}
 static inline void errorStreamPrint(int stream, int indentNext, const char *format, ...) {}
 static inline void va_errorStreamPrint(int stream, int indentNext, const char *format, va_list ap) {}
-static inline void va_errorStreamPrintWithEquationIndexes(int stream, int indentNext, const int *indexes, const char *format,va_list ap) {}
+static inline void va_errorStreamPrintWithEquationIndexes(int stream, FILE_INFO info, int indentNext, const int *indexes, const char *format,va_list ap) {}
 #endif
 
 extern void va_throwStreamPrint(threadData_t *threadData, const char *format, va_list ap) __attribute__ ((noreturn));
 extern void throwStreamPrint(threadData_t *threadData, const char *format, ...) __attribute__ ((format (printf, 2, 3), noreturn));
-extern void throwStreamPrintWithEquationIndexes(threadData_t *threadData, const int *indexes, const char *format, ...) __attribute__ ((format (printf, 3, 4), noreturn));
+extern void throwStreamPrintWithEquationIndexes(threadData_t *threadData, FILE_INFO info, const int *indexes, const char *format, ...) __attribute__ ((format (printf, 4, 5), noreturn));
 #ifdef HAVE_VA_MACROS
 #define assertStreamPrint(threadData, cond, ...) if (!(cond)) {throwStreamPrint((threadData), __VA_ARGS__); assert(0);}
 #else
@@ -227,18 +239,18 @@ static void OMC_INLINE assertStreamPrint(threadData_t *threadData, int cond, con
 
 #define omc_assert_macro(expr) \
   if (!(expr)) {                \
-    abort(); \
     throwStreamPrint(NULL, "%s:%d: %s: Assertion `%s` failed.\n",  __FILE__, __LINE__, OMC_FUNCTION, #expr); \
+    exit(1); \
   }
 
 #ifdef USE_DEBUG_OUTPUT
-void debugStreamPrint(int stream, int indentNext, const char *format, ...) __attribute__ ((format (printf, 3, 4)));
-void debugStreamPrintWithEquationIndexes(int stream, int indentNext, const int *indexes, const char *format, ...) __attribute__ ((format (printf, 4, 5)));
+void debugStreamPrint(int stream, FILE_INFO info, int indentNext, const char *format, ...) __attribute__ ((format (printf, 3, 4)));
+void debugStreamPrintWithEquationIndexes(int stream, FILE_INFO info, int indentNext, const int *indexes, const char *format, ...) __attribute__ ((format (printf, 5, 6)));
 #else
 static OMC_INLINE void debugStreamPrint(int stream __attribute__((unused)), int indentNext __attribute__((unused)), const char *format __attribute__((unused)), ...) __attribute__ ((format (printf, 3, 4)));
 static OMC_INLINE void debugStreamPrint(int stream __attribute__((unused)), int indentNext __attribute__((unused)), const char *format __attribute__((unused)), ...) {/* Do nothing */}
-static OMC_INLINE void debugStreamPrintWithEquationIndexes(int stream __attribute__((unused)), int indentNext __attribute__((unused)), const int *indexes __attribute__((unused)), const char *format __attribute__((unused)), ...) __attribute__ ((format (printf, 4, 5)));
-static OMC_INLINE void debugStreamPrintWithEquationIndexes(int stream  __attribute__((unused)), int indentNext __attribute__((unused)), const int *indexes __attribute__((unused)), const char *format __attribute__((unused)), ...)  {/* Do nothing */}
+static OMC_INLINE void debugStreamPrintWithEquationIndexes(int stream __attribute__((unused)), FILE_INFO info, int indentNext __attribute__((unused)), const int *indexes __attribute__((unused)), const char *format __attribute__((unused)), ...) __attribute__ ((format (printf, 5, 6)));
+static OMC_INLINE void debugStreamPrintWithEquationIndexes(int stream  __attribute__((unused)), FILE_INFO info, int indentNext __attribute__((unused)), const int *indexes __attribute__((unused)), const char *format __attribute__((unused)), ...)  {/* Do nothing */}
 #endif
 
 #ifdef __cplusplus

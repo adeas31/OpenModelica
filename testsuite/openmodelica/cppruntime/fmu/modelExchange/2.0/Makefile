@@ -3,6 +3,8 @@ TEST = ../../../../../rtest -v
 
 TESTFILES = \
 DIC_FMU2_CPP.mos \
+exposeLocalIOs.mos \
+solveOneNonlinearEquationTest.mos \
 testArrayEquations.mos \
 testFMU2MatrixIO.mos \
 testModelDescription.mos \

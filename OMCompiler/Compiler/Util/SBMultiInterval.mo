@@ -210,6 +210,15 @@ public
     res := MULTI_INTERVAL(ints, arrayLength(ints));
   end crossProd;
 
+  function cardinality
+    input SBMultiInterval mi;
+    output Integer card = 0;
+  algorithm
+    for i in 1:mi.ndim loop
+      card := card + SBInterval.cardinality(mi.intervals[i]);
+    end for;
+  end cardinality;
+
   function intervals
     input SBMultiInterval mi;
     output array<SBInterval> ints = mi.intervals;
@@ -259,10 +268,9 @@ public
 
   function hash
     input SBMultiInterval mi;
-    input Integer mod;
     output Integer res;
   algorithm
-    res := intMod(arrayLength(mi.intervals), mod);
+    res := arrayLength(mi.intervals);
   end hash;
 
   function size

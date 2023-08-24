@@ -68,6 +68,7 @@ protected import MetaModelica.Dangerous;
 protected import Static;
 protected import System;
 protected import Types;
+protected import UnorderedMap;
 protected import Util;
 protected import Values;
 protected import ValuesUtil;
@@ -239,7 +240,7 @@ algorithm
         e = simplifyUnary(inExp, op, e1);
       then (e,options);
 
-    case (DAE.BINARY(exp1 = e1,operator = op, exp2 = e2), _)
+    case (DAE.BINARY(exp1 = e1, operator = op, exp2 = e2), _)
       equation
         e = simplifyBinary(inExp, op, e1, e2);
       then (e,options);
@@ -638,7 +639,7 @@ public function simplify1
   output DAE.Exp outExp;
   output Boolean hasChanged;
 algorithm
-  (outExp,hasChanged) := simplify1WithOptions(inExp,optionSimplifyOnly);
+  (outExp, hasChanged) := simplify1WithOptions(inExp, optionSimplifyOnly);
 end simplify1;
 
 public function simplify1o
@@ -648,13 +649,12 @@ public function simplify1o
   output Option<DAE.Exp> outExp;
 algorithm
   outExp := match inExp
-            local DAE.Exp e;
-            case SOME(e)
-            equation
-              (e,_) = simplify1WithOptions(e,optionSimplifyOnly);
-            then SOME(e);
-            else inExp;
-            end match;
+    local DAE.Exp e;
+    case SOME(e) algorithm
+      (e, _) := simplify1WithOptions(e, optionSimplifyOnly);
+    then SOME(e);
+    else inExp;
+  end match;
 end simplify1o;
 
 
@@ -666,8 +666,8 @@ public function simplify1WithOptions
   output DAE.Exp outExp;
   output Boolean hasChanged;
 algorithm
-  (outExp,hasChanged) := simplify1FixP(inExp,options,100,true,false);
-  checkSimplify(Flags.isSet(Flags.CHECK_SIMPLIFY),inExp,outExp);
+  (outExp, hasChanged) := simplify1FixP(inExp, options, 100, true, false);
+  checkSimplify(Flags.isSet(Flags.CHECK_SIMPLIFY), inExp, outExp);
 end simplify1WithOptions;
 
 protected function checkSimplify
@@ -676,7 +676,7 @@ protected function checkSimplify
   input DAE.Exp before;
   input DAE.Exp after;
 algorithm
-  _ := match (check,before,after)
+  () := match (check,before,after)
     local
       Integer c1,c2;
       Boolean b;
@@ -1530,10 +1530,10 @@ algorithm
       then DAE.CLKCONST(DAE.REAL_CLOCK(e1));
 
     case (DAE.CALL(path=Absyn.IDENT("booleanClock"),expLst={e1,e2}))
-      then DAE.CLKCONST(DAE.BOOLEAN_CLOCK(e1,e2));
+      then DAE.CLKCONST(DAE.EVENT_CLOCK(e1,e2));
 
     case (DAE.CALL(path=Absyn.IDENT("rationalClock"),expLst={e1,e2}))
-      then DAE.CLKCONST(DAE.INTEGER_CLOCK(e1, e2));
+      then DAE.CLKCONST(DAE.RATIONAL_CLOCK(e1, e2));
 
     case (DAE.CALL(path=Absyn.IDENT("solverClock"),expLst={e1,e2}))
       then DAE.CLKCONST(DAE.SOLVER_CLOCK(e1, e2));
@@ -3116,74 +3116,78 @@ protected function simplifyAdd
   Simplifies terms like 2a+4b+2a+a+b"
   input list<DAE.Exp> inExpLst;
   output list<DAE.Exp> outExpLst;
+protected
+  list<tuple<DAE.Exp, Real>> coeffs;
 algorithm
-  outExpLst := matchcontinue (inExpLst)
-    local
-      list<tuple<DAE.Exp, Real>> exp_const,exp_const_1;
-      list<DAE.Exp> expl_1,expl;
-
-    case (_)
-      equation
-        exp_const = List.map(inExpLst, simplifyBinaryAddCoeff2);
-        exp_const_1 = simplifyAddJoinTerms(exp_const);
-        expl_1 = simplifyAddMakeMul(exp_const_1);
-      then
-        expl_1;
-
-    else
-      equation
-        true = Flags.isSet(Flags.FAILTRACE);
-        Debug.trace("- ExpressionSimplify.simplifyAdd failed\n");
-      then
-        fail();
-  end matchcontinue;
+  try
+    coeffs := List.map(inExpLst, simplifyBinaryAddCoeff2);
+    coeffs := simplifyAddJoinTerms(coeffs);
+    outExpLst := simplifyAddMakeMul(coeffs);
+  else
+    if Flags.isSet(Flags.FAILTRACE) then
+      Debug.trace("- ExpressionSimplify.simplifyAdd failed\n");
+    end if;
+    fail();
+  end try;
 end simplifyAdd;
 
 protected function simplifyAddJoinTerms
-"author: PA
-  Helper function to simplifyAdd.
-  Join all terms with the same expression.
-  i.e. 2a+4a gives an element (a,6) in the list."
+  "O(n)
+   author: PA
+   Helper function to simplifyAdd.
+   Join all terms with the same expression.
+   i.e. 2a+4a gives an element (a,6) in the list."
   input list<tuple<DAE.Exp, Real>> inTplExpRealLst;
-  output list<tuple<DAE.Exp, Real>> outTplExpRealLst = {};
+  output list<tuple<DAE.Exp, Real>> outTplExpRealLst;
 protected
-  list<tuple<DAE.Exp, Real>> tplExpRealLst = inTplExpRealLst;
-  tuple<DAE.Exp, Real> t;
-  DAE.Exp e;
-  Real coeff, coeff2;
+  function addCoeff
+    input Option<Real> oldCoeff;
+    input Real newCoeff;
+    output Real coeff;
+  algorithm
+    coeff := if isSome(oldCoeff) then Util.getOption(oldCoeff) + newCoeff else newCoeff;
+  end addCoeff;
 algorithm
+  outTplExpRealLst := match inTplExpRealLst
+    local
+      DAE.Exp exp1, exp2, exp3;
+      Real coeff1, coeff2, coeff3;
+      UnorderedMap<DAE.Exp, Real> coeff_map;
 
-  while not listEmpty(tplExpRealLst) loop
-    t :: tplExpRealLst := tplExpRealLst;
-    (e, coeff) := t;
-    (coeff2, tplExpRealLst) := simplifyAddJoinTermsFind(e, tplExpRealLst);
-    coeff := coeff + coeff2;
-    outTplExpRealLst := (if coeff2==0 then t else (e, coeff)) :: outTplExpRealLst;
-  end while;
-//outTplExpRealLst := listReverse(outTplExpRealLst);
+    // explicitly roll out the small cases since they happen a lot
+    case {} then {};
+    case {_} then inTplExpRealLst;
+
+    case {(exp1, coeff1), (exp2, coeff2)}
+    then if Expression.expEqual(exp1, exp2) then {(exp1, coeff1 + coeff2)} else inTplExpRealLst;
+
+    case {(exp1, coeff1), (exp2, coeff2), (exp3, coeff3)} algorithm
+      if Expression.expEqual(exp1, exp2) then
+        if Expression.expEqual(exp1, exp3) then
+          outTplExpRealLst := {(exp1, coeff1 + coeff2 + coeff3)};
+        else
+          outTplExpRealLst := {(exp1, coeff1 + coeff2), (exp3, coeff3)};
+        end if;
+      elseif Expression.expEqual(exp1, exp3) then
+        outTplExpRealLst := {(exp1, coeff1 + coeff3), (exp2, coeff2)};
+      elseif Expression.expEqual(exp2, exp3) then
+        outTplExpRealLst := {(exp1, coeff1), (exp2, coeff2 + coeff3)};
+      else
+        outTplExpRealLst := inTplExpRealLst;
+      end if;
+    then outTplExpRealLst;
+
+    // general case, this is O(n) but has a small overhead
+    else algorithm
+      coeff_map := UnorderedMap.new<Real>(Expression.hashExp, Expression.expEqual, listLength(inTplExpRealLst));
+      for tpl in inTplExpRealLst loop
+        (exp1, coeff1) := tpl;
+        // set the coefficient of exp1 to coeff1, add the previous coefficient if exp1 is already in the map
+        UnorderedMap.addUpdate(exp1, function addCoeff(newCoeff = coeff1), coeff_map);
+      end for;
+    then UnorderedMap.toList(coeff_map);
+  end match;
 end simplifyAddJoinTerms;
-
-protected function simplifyAddJoinTermsFind
-"author: PA
-  Helper function to simplifyAddJoinTerms, finds all occurences of Expression."
-  input DAE.Exp inExp;
-  input list<tuple<DAE.Exp, Real>> inTplExpRealLst;
-  output Real outReal = 0.0;
-  output list<tuple<DAE.Exp, Real>> outTplExpRealLst = {};
-protected
-  DAE.Exp e;
-  Real coeff;
-algorithm
-  for t in inTplExpRealLst loop
-    (e,coeff) := t;
-    if Expression.expEqual(inExp, e) then
-      outReal := outReal + coeff;
-    else
-      outTplExpRealLst := t::outTplExpRealLst;
-    end if;
-  end for;
-  outTplExpRealLst := Dangerous.listReverseInPlace(outTplExpRealLst);
-end simplifyAddJoinTermsFind;
 
 protected function simplifyAddMakeMul
 "author: PA
@@ -3191,34 +3195,19 @@ protected function simplifyAddMakeMul
   in the list, except for coefficient 1.0"
   input list<tuple<DAE.Exp, Real>> inTplExpRealLst;
   output list<DAE.Exp> outExpLst = {};
-protected
-  tuple<DAE.Exp, Real> tplExpReal;
 algorithm
-  for tplExpReal in inTplExpRealLst loop
-    outExpLst := matchcontinue (tplExpReal)
+  outExpLst := list(match tplExpReal
     local
       DAE.Exp e;
       Real r;
-      Integer tmpInt;
-
-    case (e,r)
-      guard (r == 1.0)
-      then
-        (e :: outExpLst);
-
-    case (e,r)
-      equation
-        DAE.T_INTEGER() = Expression.typeof(e);
-        tmpInt = realInt(r);
-      then
-        (DAE.BINARY(DAE.ICONST(tmpInt),DAE.MUL(DAE.T_INTEGER_DEFAULT),e) :: outExpLst);
-
-    case (e,r)
-      then
-        (DAE.BINARY(DAE.RCONST(r),DAE.MUL(DAE.T_REAL_DEFAULT),e) :: outExpLst);
-    end matchcontinue;
-
-  end for;
+    case (e, 1.0) then e;
+    case (e, -1.0) then Expression.negate(e);
+    case (e, r)
+    then match Expression.typeof(e)
+           case DAE.T_INTEGER() then DAE.BINARY(DAE.ICONST(realInt(r)), DAE.MUL(DAE.T_INTEGER_DEFAULT), e);
+                                else DAE.BINARY(DAE.RCONST(r), DAE.MUL(DAE.T_REAL_DEFAULT), e);
+         end match;
+  end match for tplExpReal in inTplExpRealLst);
 end simplifyAddMakeMul;
 
 protected function simplifyBinaryAddCoeff2
@@ -4326,7 +4315,7 @@ algorithm
         res = DAE.BINARY(e1,op1,e);
       then res;
 
-    // (c op1 a*b)/b =>  c/b  op1 a
+    // (c op1 a*b)/b => c/b op1 a
     case (_,DAE.DIV(_),DAE.BINARY(e3, op1,DAE.BINARY(e1, DAE.MUL(_), e2)),e4,_,_)
       equation
         true = Expression.isAddOrSub(op1);
@@ -4599,6 +4588,7 @@ algorithm
     // sqrt(e) ^ 2.0 => e
     case (_,DAE.POW(),DAE.CALL(path=Absyn.IDENT("sqrt"),expLst={e}),DAE.RCONST(2.0),_,_)
       then e;
+      // phi: assert(e >= 0)?
 
     // sqrt(e) ^ r => e ^ 0.5*r
     case (_,oper as DAE.POW(),DAE.CALL(path=Absyn.IDENT("sqrt"),expLst={e1}),e,_,_)
@@ -4731,22 +4721,46 @@ algorithm
      then
        outExp;
 
+    // ticket #9575
+    // For fractional exponents, i.e. roots, only distribute over non-negative factors
+    case (_, DAE.POW(), e1, e2 as DAE.RCONST(r), _, true) guard r <> intReal(realInt(r))
+      equation
+        /*
+         * Only do this for constant exponent and any constant expression.
+         * Exponentation is very expensive compared to the inner expressions.
+         */
+        exp_lst as (_ :: _ :: _ :: _) = Expression.factors(e1);
+        true = List.exist(exp_lst, Expression.isEvaluatedConst);
+        (exp_lst, exp_lst_1) = List.splitOnTrue(exp_lst, Expression.isPositiveOrZero);
+        exp_lst = simplifyBinaryDistributePow(exp_lst, e2);
+        e = Expression.makeProductLst(exp_lst_1);
+        e = DAE.BINARY(e, inOperator2, e2);
+        outExp = Expression.makeProductLst(e :: exp_lst);
+      then outExp;
+
     // (a1a2...an)^e2 => a1^e2a2^e2..an^e2
-    case (_,DAE.POW(),e1,e2,_,true)
+    case (_,DAE.POW(),e1,e2,_,true) guard Expression.isEvaluatedConst(e2)
       equation
         /*
          * Only do this for constant exponent and any constant expression.
          * Exponentation is very expensive compared to the inner expressions.
          */
         ((exp_lst as (_ :: _ :: _ :: _))) = Expression.factors(e1);
-        true = List.exist(exp_lst,Expression.isConstValue);
+        true = List.exist(exp_lst,Expression.isEvaluatedConst);
         exp_lst_1 = simplifyBinaryDistributePow(exp_lst, e2);
       then Expression.makeProductLst(exp_lst_1);
 
     // ticket #6068 (second issue)
-    // (e1^e2)^e3 => abs(e1)^(e2*e3) if e2 is even
+    // (e1^e2)^e3 => abs(e1)^(e2*e3) if e2 is even but e2*e3 is not
     case (_,DAE.POW(),DAE.BINARY(e1,DAE.POW(),e2),e3,_,_) guard Expression.isEven(e2)
-      then DAE.BINARY(Expression.makePureBuiltinCall("abs", {e1}, Expression.typeof(e1)),DAE.POW(DAE.T_REAL_DEFAULT),DAE.BINARY(e2,DAE.MUL(DAE.T_REAL_DEFAULT),e3));
+      equation
+        if Expression.isEvaluatedConst(e3) then
+          e = simplifyBinaryConst(DAE.MUL(DAE.T_REAL_DEFAULT), e2, e3);
+          false = Expression.isEven(e);
+        else
+          e = DAE.BINARY(e2,DAE.MUL(DAE.T_REAL_DEFAULT),e3);
+        end if;
+      then DAE.BINARY(Expression.makePureBuiltinCall("abs", {e1}, Expression.typeof(e1)),DAE.POW(DAE.T_REAL_DEFAULT), e);
 
     // (e1^e2)^e3 => e1^(e2*e3)
     case (_,DAE.POW(),DAE.BINARY(e1,DAE.POW(),e2),e3,_,_)
@@ -4765,11 +4779,11 @@ algorithm
         e4 = Expression.makePureBuiltinCall("cos",{e2},ty);
         e = DAE.BINARY(e3,op2,e4);
       then e;
-    // cos(e2)/tan(e2) => sin(e2)
-    case(_,DAE.DIV(ty),DAE.CALL(path=Absyn.IDENT("cos"),expLst={e1}),DAE.CALL(path=Absyn.IDENT("tan"),expLst={e2}),_,_)
+    // sin(e2)/tan(e2) => cos(e2)
+    case(_,DAE.DIV(ty),DAE.CALL(path=Absyn.IDENT("sin"),expLst={e1}),DAE.CALL(path=Absyn.IDENT("tan"),expLst={e2}),_,_)
       equation
         true = Expression.expEqual(e1,e2);
-        e = Expression.makePureBuiltinCall("sin",{e2},ty);
+        e = Expression.makePureBuiltinCall("cos",{e2},ty);
       then e;
     // e1/tan(e2) => e1*cos(e2)/sin(e2)
     case(_,op2 as DAE.DIV(ty),e1,DAE.CALL(path=Absyn.IDENT("tan"),expLst={e2}),_,_)
@@ -4778,18 +4792,11 @@ algorithm
         e4 = Expression.makePureBuiltinCall("cos",{e2},ty);
         e = DAE.BINARY(e4,op2,e3);
       then DAE.BINARY(e1,DAE.MUL(ty), e);
-    // sinh(e)/cosh(e) => tan(e)
+    // sinh(e)/cosh(e) => tanh(e)
     case(_,DAE.DIV(ty),DAE.CALL(path=Absyn.IDENT("sinh"),expLst={e1}),DAE.CALL(path=Absyn.IDENT("cosh"),expLst={e2}),_,_)
       equation
         true = Expression.expEqual(e1,e2);
       then Expression.makePureBuiltinCall("tanh",{e1},ty);
-    // e1/tanh(e2) => e1*cos(e2)/sin(e2)
-    case(_,op2 as DAE.DIV(ty),e1,DAE.CALL(path=Absyn.IDENT("tanh"),expLst={e2}),_,_)
-      equation
-        e3 = Expression.makePureBuiltinCall("sinh",{e2},ty);
-        e4 = Expression.makePureBuiltinCall("cosh",{e2},ty);
-        e = DAE.BINARY(e4,op2,e3);
-      then DAE.BINARY(e1,DAE.MUL(ty), e);
     // tanh(e2)/sinh(e2) => 1.0/cosh(e2)
     case(_,op2 as DAE.DIV(ty),DAE.CALL(path=Absyn.IDENT("tanh"),expLst={e1}),DAE.CALL(path=Absyn.IDENT("sinh"),expLst={e2}),_,_)
       equation
@@ -4798,11 +4805,11 @@ algorithm
         e4 = Expression.makePureBuiltinCall("cosh",{e2},ty);
         e = DAE.BINARY(e3,op2,e4);
       then e;
-    // cosh(e2)/tanh(e2) => sinh(e2)
-    case(_,DAE.DIV(ty),DAE.CALL(path=Absyn.IDENT("cosh"),expLst={e1}),DAE.CALL(path=Absyn.IDENT("tanh"),expLst={e2}),_,_)
+    // sinh(e2)/tanh(e2) => cosh(e2)
+    case(_,DAE.DIV(ty),DAE.CALL(path=Absyn.IDENT("sinh"),expLst={e1}),DAE.CALL(path=Absyn.IDENT("tanh"),expLst={e2}),_,_)
       equation
         true = Expression.expEqual(e1,e2);
-        e = Expression.makePureBuiltinCall("sinh",{e2},ty);
+        e = Expression.makePureBuiltinCall("cosh",{e2},ty);
       then e;
 
     // e1  -e2 => -e1  e2
@@ -5994,9 +6001,9 @@ algorithm
   {y1, y2, y3} := v2;
 
   // res = {x[2]*y[3] - x[3]*y[2], x[3]*y[1] - x[1]*y[3], x[1]*y[2] - x[2]*y[1]}
-  res := {Expression.makeDiff(Expression.makeProduct(x2, y3), Expression.makeProduct(x3, y2)),
-          Expression.makeDiff(Expression.makeProduct(x3, y1), Expression.makeProduct(x1, y3)),
-          Expression.makeDiff(Expression.makeProduct(x1, y2), Expression.makeProduct(x2, y1))};
+  res := {Expression.expSub(Expression.makeProduct(x2, y3), Expression.makeProduct(x3, y2)),
+          Expression.expSub(Expression.makeProduct(x3, y1), Expression.makeProduct(x1, y3)),
+          Expression.expSub(Expression.makeProduct(x1, y2), Expression.makeProduct(x2, y1))};
 end simplifyCross;
 
 annotation(__OpenModelica_Interface="frontend");

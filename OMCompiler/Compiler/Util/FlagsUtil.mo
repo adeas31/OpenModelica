@@ -136,7 +136,6 @@ constant list<Flags.DebugFlag> allDebugFlags = {
   Flags.GRAPH_INST,
   Flags.GRAPH_INST_RUN_DEP,
   Flags.GRAPH_INST_GEN_GRAPH,
-  Flags.GRAPH_INST_SHOW_GRAPH,
   Flags.DUMP_CONST_REPL,
   Flags.SHOW_EQUATION_SOURCE,
   Flags.LS_ANALYTIC_JACOBIAN,
@@ -237,13 +236,21 @@ constant list<Flags.DebugFlag> allDebugFlags = {
   Flags.DUMP_JL,
   Flags.DUMP_ASSC,
   Flags.SPLIT_CONSTANT_PARTS_SYMJAC,
-  Flags.NF_DUMP_FLAT,
   Flags.DUMP_FORCE_FMI_ATTRIBUTES,
   Flags.DUMP_DATARECONCILIATION,
   Flags.ARRAY_CONNECT,
   Flags.COMBINE_SUBSCRIPTS,
   Flags.ZMQ_LISTEN_TO_ALL,
-  Flags.DUMP_CONVERSION_RULES
+  Flags.DUMP_CONVERSION_RULES,
+  Flags.PRINT_RECORD_TYPES,
+  Flags.DUMP_SIMPLIFY,
+  Flags.DUMP_BACKEND_CLOCKS,
+  Flags.DUMP_SET_BASED_GRAPHS,
+  Flags.MERGE_COMPONENTS,
+  Flags.DUMP_SLICE,
+  Flags.VECTORIZE_BINDINGS,
+  Flags.DUMP_EVENTS,
+  Flags.DUMP_BINDINGS
 };
 
 protected
@@ -366,7 +373,7 @@ constant list<Flags.ConfigFlag> allConfigFlags = {
   Flags.LABELED_REDUCTION,
   Flags.DISABLE_EXTRA_LABELING,
   Flags.LOAD_MSL_MODEL,
-  Flags.Load_PACKAGE_FILE,
+  Flags.LOAD_PACKAGE_FILE,
   Flags.BUILDING_FMU,
   Flags.BUILDING_MODEL,
   Flags.POST_OPT_MODULES_DAE,
@@ -392,13 +399,20 @@ constant list<Flags.ConfigFlag> allConfigFlags = {
   Flags.FMI_FILTER,
   Flags.FMI_SOURCES,
   Flags.FMI_FLAGS,
+  Flags.FMU_CMAKE_BUILD,
   Flags.NEW_BACKEND,
   Flags.PARMODAUTO,
   Flags.INTERACTIVE_PORT,
   Flags.ALLOW_NON_STANDARD_MODELICA,
   Flags.EXPORT_CLOCKS_IN_MODELDESCRIPTION,
   Flags.LINK_TYPE,
-  Flags.TEARING_ALWAYS_DERIVATIVES
+  Flags.TEARING_ALWAYS_DERIVATIVES,
+  Flags.DUMP_FLAT_MODEL,
+  Flags.SIMULATION,
+  Flags.OBFUSCATE,
+  Flags.FMU_RUNTIME_DEPENDS,
+  Flags.FRONTEND_INLINE,
+  Flags.EXPOSE_LOCAL_IOS
 };
 
 public function new
@@ -1119,6 +1133,10 @@ algorithm
   // add other deprecated flags here...
 
   // CONFIG_FLAGS
+  if Flags.getConfigString(Flags.TEARING_METHOD) == "noTearing" then
+    setConfigString(Flags.TEARING_METHOD, "minimalTearing");
+    Error.addMessage(Error.DEPRECATED_FLAG, {"--tearingMethod=noTearing", "--tearingMethod=minimalTearing"});
+  end if;
   remaining_flags := {};
   for flag in Flags.getConfigStringList(Flags.PRE_OPT_MODULES) loop
     if flag == "unitChecking" then
@@ -1472,11 +1490,12 @@ protected
 algorithm
   Print.clearBuf();
   s := "OpenModelica Compiler Flags";
+  Print.printBuf("\n.. _openmodelica-compiler-flags :\n\n");
   Print.printBuf(s);
   Print.printBuf("\n");
   Print.printBuf(sum("=" for e in 1:stringLength(s)));
   Print.printBuf("\n");
-  Print.printBuf(System.gettext("Usage: omc [Options] (Model.mo | Script.mos) [Libraries | .mo-files]\n\n* Libraries: Fully qualified names of libraries to load before processing Model or Script.\n  The libraries should be separated by spaces: Lib1 Lib2 ... LibN.\n"));
+  Print.printBuf(System.gettext("Usage: omc [Options] (Model.mo | Script.mos) [Libraries | .mo-files]\n\n* Libraries: Fully qualified names of libraries to load before processing Model or Script.\n  The libraries should be separated by spaces: Lib1 Lib2 ... LibN.\n\n"));
   Print.printBuf("\n.. _omcflags-options :\n\n");
   s := System.gettext("Options");
   Print.printBuf(s);

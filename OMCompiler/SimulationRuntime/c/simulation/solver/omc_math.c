@@ -704,73 +704,71 @@ _omc_matrix* _omc_multiplyMatrixMatrix(_omc_matrix* mat1, _omc_matrix* mat2)
   return mat1;
 }
 
-/*! \fn void _omc_printVector(_omc_vector* vec, char* name, int logLevel)
+/**
+ * @brief Print vector and equation info to stream.
  *
- *  outputs the _omc_vector
- *
- *  \param [in]  [vec]      !TODO: DESCRIBE ME!
- *  \param [in]  [name]     !TODO: DESCRIBE ME!
- *  \param [in]  [logLevel] !TODO: DESCRIBE ME!
+ * @param vec       Vector.
+ * @param name      Name of vector.
+ * @param stream    Log stream.
+ * @param eqnInfo   Information about equation
  */
-void _omc_printVectorWithEquationInfo(_omc_vector* vec, const char* name, const int logLevel, EQUATION_INFO eqnInfo)
+void _omc_printVectorWithEquationInfo(_omc_vector* vec, const char* name, const enum LOG_STREAM stream, EQUATION_INFO eqnInfo)
 {
   _omc_size i;
 
-  if (!ACTIVE_STREAM(logLevel))
+  if (!ACTIVE_STREAM(stream))
     return;
 
   assertStreamPrint(NULL, NULL != vec->data, "Vector data is NULL pointer");
 
-  infoStreamPrint(logLevel, 1, "%s", name);
+  infoStreamPrint(stream, 1, "%s", name);
   for (i = 0; i < vec->size; ++i)
   {
-    infoStreamPrint(logLevel, 0, "[%3d] %-40s = %20.12g",   (int)i+1, eqnInfo.vars[i], vec->data[i]);
+ //   infoStreamPrint(stream, 0, "[%3d] %-40s = %20.12g",   (int)i+1, eqnInfo.vars[i], vec->data[i]);
   }
-  messageClose(logLevel);
+  messageClose(stream);
 }
 
-/*! \fn void _omc_printVector(_omc_vector* vec, char* name, int logLevel)
+/**
+ * @brief Print vector to stream.
  *
- *  outputs the _omc_vector
- *
- *  \param [in]  [vec]      !TODO: DESCRIBE ME!
- *  \param [in]  [name]     !TODO: DESCRIBE ME!
- *  \param [in]  [logLevel] !TODO: DESCRIBE ME!
+ * @param vec       Vector.
+ * @param name      Name of vector.
+ * @param stream    Log stream.
  */
-void _omc_printVector(_omc_vector* vec, const char* name, const int logLevel)
+void _omc_printVector(_omc_vector* vec, const char* name, const enum LOG_STREAM stream)
 {
   _omc_size i;
 
-  if (!ACTIVE_STREAM(logLevel))
+  if (!ACTIVE_STREAM(stream))
     return;
 
   assertStreamPrint(NULL, NULL != vec->data, "Vector data is NULL pointer");
 
-  infoStreamPrint(logLevel, 1, "%s", name);
+  infoStreamPrint(stream, 1, "%s", name);
   for (i = 0; i < vec->size; ++i)
   {
-    infoStreamPrint(logLevel, 0, "[%2d] %20.12g", (int)i+1, vec->data[i]);
+    infoStreamPrint(stream, 0, "[%2d] %20.12g", (int)i+1, vec->data[i]);
   }
-  messageClose(logLevel);
+  messageClose(stream);
 }
 
-/*! \fn void _omc_printMatrix(_omc_matrix* mat, char* name, int logLevel)
+/**
+ * @brief Print matrix to stream.
  *
- *  outputs the _omc_matrix
- *
- *  \param [in]  [mat]      !TODO: DESCRIBE ME!
- *  \param [in]  [name]     !TODO: DESCRIBE ME!
- *  \param [in]  [logLevel] !TODO: DESCRIBE ME!
+ * @param mat       Matrix.
+ * @param name      Name of matrix.
+ * @param stream    Log stream.
  */
-void _omc_printMatrix(_omc_matrix* mat, const char* name, const int logLevel) {
-  if (ACTIVE_STREAM(logLevel))
+void _omc_printMatrix(_omc_matrix* mat, const char* name, const enum LOG_STREAM stream) {
+  if (ACTIVE_STREAM(stream))
   {
     _omc_size i, j;
     char *buffer = (char*)malloc(sizeof(char)*mat->cols*20);
 
     assertStreamPrint(NULL, NULL != mat->data, "matrix data is NULL pointer");
 
-    infoStreamPrint(logLevel, 1, "%s", name);
+    infoStreamPrint(stream, 1, "%s", name);
     for (i = 0; i < mat->rows; ++i)
     {
       buffer[0] = 0;
@@ -778,37 +776,34 @@ void _omc_printMatrix(_omc_matrix* mat, const char* name, const int logLevel) {
       {
         sprintf(buffer, "%s%10g ", buffer, _omc_getMatrixElement(mat, i, j));
       }
-      infoStreamPrint(logLevel, 0, "%s", buffer);
+      infoStreamPrint(stream, 0, "%s", buffer);
     }
-    messageClose(logLevel);
+    messageClose(stream);
     free(buffer);
   }
 }
 
-/*! \fn _omc_scalar _omc_euclideanVectorNorm(_omc_vector* vec)
+/**
+ * @brief Euclidean vector norm.
  *
- *  calculates the euclidean vector norm
+ * ||x||_2 := sqrt(x_1^2 + ... + x_n^2)
  *
- *  \param [in]  [vec] !TODO: DESCRIBE ME!
+ * @param vec             OMC vector.
+ * @return _omc_scalar    Vector norm.
  */
 _omc_scalar _omc_euclideanVectorNorm(const _omc_vector* vec)
 {
-  _omc_size i;
-  _omc_scalar result = 0;
-  assertStreamPrint(NULL, vec->size > 0, "Vector size is greater than zero");
-  assertStreamPrint(NULL, NULL != vec->data, "Vector data is NULL pointer");
-  for (i = 0; i < vec->size; ++i) {
-    result += pow(fabs(vec->data[i]),2.0);
-  }
-
-  return sqrt(result);
+  return _omc_gen_euclideanVectorNorm(vec->data, vec->size);
 }
 
-/*! \fn _omc_scalar _omc_gen_euclideanVectorNorm(_omc_vector* vec)
+/**
+ * @brief Euclidean vector norm.
  *
- *  calculates the euclidean vector norm
+ * ||x||_2 := sqrt(x_1^2 + ... + x_n^2)
  *
- *  \param [in]  [vec] !TODO: DESCRIBE ME!
+ * @param vec_data        Array with vector.
+ * @param vec_size        Length of array vec_data.
+ * @return _omc_scalar    Vector norm.
  */
 _omc_scalar _omc_gen_euclideanVectorNorm(const _omc_scalar* vec_data, const _omc_size vec_size)
 {
@@ -816,32 +811,45 @@ _omc_scalar _omc_gen_euclideanVectorNorm(const _omc_scalar* vec_data, const _omc
   _omc_scalar result = 0;
   assertStreamPrint(NULL, vec_size > 0, "Vector size is greater than zero");
   assertStreamPrint(NULL, NULL != vec_data, "Vector data is NULL pointer");
-  for (i = 0; i < vec_size; ++i) {
-    result += pow(fabs(vec_data[i]),2.0);
+  for (i = 0; i < vec_size; i++) {
+    result += vec_data[i]*vec_data[i];
   }
 
   return sqrt(result);
 }
 
-/*! \fn _omc_scalar _omc_maximumVectorNorm(_omc_vector* vec)
+/**
+ * @brief Maximum / Infinity vector norm.
  *
- *  calculates the maximum vector norm
+ * ||x||_max := max(|x_1|, ..., |x_n|)
+ *
+ * @param vec             OMC vector.
+ * @return _omc_scalar    Vector norm.
  */
 _omc_scalar _omc_maximumVectorNorm(const _omc_vector* vec)
 {
+  return _omc_gen_maximumVectorNorm(vec->data, vec->size);
+}
+
+/**
+ * @brief Maximum / Infinity vector norm.
+ *
+ * ||x||_max := max(|x_1|, ..., |x_n|)
+ *
+ * @param vec_data        Array with vector.
+ * @param vec_size        Length of array vec_data.
+ * @return _omc_scalar    Vector norm.
+ */
+_omc_scalar _omc_gen_maximumVectorNorm(const _omc_scalar* vec_data, const _omc_size vec_size) {
   _omc_size i;
-  _omc_scalar result, tmp;
-  assertStreamPrint(NULL, vec->size > 0, "Vector size is greater the zero");
-  assertStreamPrint(NULL, NULL != vec->data, "Vector data is NULL pointer");
-  result = fabs(vec->data[0]);
-  for (i = 1; i < vec->size; ++i)
+  _omc_scalar norm;
+  assertStreamPrint(NULL, vec_size > 0, "Vector size is greater the zero");
+  assertStreamPrint(NULL, NULL != vec_data, "Vector data is NULL pointer");
+  norm = fabs(vec_data[0]);
+  for (i = 1; i < vec_size; i++)
   {
-    tmp = fabs(vec->data[i]);
-    if (result < tmp)
-    {
-      result = tmp;
-    }
+    norm = fmax(fabs(vec_data[i]), norm);
   }
 
-  return result;
+  return norm;
 }

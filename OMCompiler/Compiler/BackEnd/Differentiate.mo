@@ -58,6 +58,7 @@ protected import BackendDAEUtil;
 protected import BackendEquation;
 protected import BackendUtil;
 protected import BackendVariable;
+protected import BackendVarTransform;
 protected import ClassInf;
 protected import ComponentReference;
 protected import DAEDump;
@@ -73,6 +74,7 @@ protected import Inline;
 protected import List;
 protected import SCode;
 protected import Util;
+protected import SymbolicJacobian.DAE_CJ;
 
 constant Integer defaultMaxIter = 20;
 
@@ -590,34 +592,47 @@ algorithm
       list<list<DAE.Exp>> matrix, dmatrix;
       DAE.ComponentRef cref;
 
+    // types that are not differentiated
+    case DAE.SCONST()       then (inExp, inFunctionTree);
+    case DAE.BCONST()       then (inExp, inFunctionTree);
+    case DAE.CLKCONST()     then (inExp, inFunctionTree);
+    case DAE.ENUM_LITERAL() then (inExp, inFunctionTree);
+
     // constants => results in zero
-    case DAE.BCONST(bool=b) then (DAE.BCONST(b), inFunctionTree);
     case DAE.ICONST() then (DAE.ICONST(0), inFunctionTree);
     case DAE.RCONST() then (DAE.RCONST(0.0), inFunctionTree);
-    case DAE.SCONST() then (inExp, inFunctionTree);
 
-
-    case DAE.RECORD(path = p, exps = expl, comp = strLst, ty=tp)
-      algorithm
-       sub := {};
-       functionTree := inFunctionTree;
-       for e in expl loop
-         (e1, functionTree) := differentiateExp(e,inDiffwrtCref, inInputData, inDiffType, functionTree, maxIter);
-          sub := e1 :: sub;
-       end for;
-    then  (DAE.RECORD(p, listReverse(sub), strLst, tp), functionTree);
-
-    // differentiate cref
-    case DAE.CREF(componentRef=cref, ty=tp) equation
-
+    case DAE.CREF(componentRef=cref, ty=tp) algorithm
       if ComponentReference.isStartCref(cref) then
         // differentiate start value
-        res = Expression.makeConstZero(tp);
-        functionTree = inFunctionTree;
+        res := Expression.makeConstZero(tp);
+        functionTree := inFunctionTree;
       else
-        (res, functionTree) = differentiateCrefs(inExp, inDiffwrtCref, inInputData, inDiffType, inFunctionTree, maxIter-1);
+        (res, functionTree) := differentiateCrefs(inExp, inDiffwrtCref, inInputData, inDiffType, inFunctionTree, maxIter-1);
       end if;
+    then (res, functionTree);
 
+    case DAE.BINARY() algorithm
+      (res, functionTree) := differentiateBinary(inExp, inDiffwrtCref, inInputData, inDiffType, inFunctionTree, maxIter-1);
+      res := ExpressionSimplify.simplifyBinaryExp(res);
+    then (res, functionTree);
+
+    case DAE.UNARY(operator=op, exp=e1) algorithm
+      (res, functionTree) := differentiateExp(e1, inDiffwrtCref, inInputData, inDiffType, inFunctionTree, maxIter-1);
+      res := DAE.UNARY(op, res);
+      res := ExpressionSimplify.simplifyUnaryExp(res);
+    then (res, functionTree);
+
+    // boolean expression, e.g. relation, are left as they are
+    case DAE.LBINARY()  then (inExp, inFunctionTree);
+    case DAE.LUNARY()   then (inExp, inFunctionTree);
+    case DAE.RELATION() then (inExp, inFunctionTree);
+
+    case DAE.IFEXP(expCond=e1, expThen=e2, expElse=e3) algorithm
+      (res1, functionTree) := differentiateExp(e2, inDiffwrtCref, inInputData, inDiffType, inFunctionTree, maxIter-1);
+      (res2, functionTree) := differentiateExp(e3, inDiffwrtCref, inInputData, inDiffType, functionTree, maxIter-1);
+      res := DAE.IFEXP(e1, res1, res2);
+      (res, _) := ExpressionSimplify.simplify1(res);
     then (res, functionTree);
 
     // differentiate homotopy
@@ -637,72 +652,55 @@ algorithm
       ticket: #5595
     */
     case DAE.CALL(path=p as Absyn.IDENT(name="semiLinear"), expLst={e1, e2, e3}, attr=attr)
-      guard(Expression.expHasCref(e2, inDiffwrtCref) or  Expression.expHasCref(e3, inDiffwrtCref))
+      guard(Expression.expHasCref(e2, inDiffwrtCref) or Expression.expHasCref(e3, inDiffwrtCref))
     then fail();
 
     // differentiate call
-    case DAE.CALL() equation
-
-      (res, functionTree) = differentiateCalls(inExp, inDiffwrtCref, inInputData, inDiffType, inFunctionTree, maxIter-1);
-      (res,_) = ExpressionSimplify.simplify1(res);
-
+    case DAE.CALL() algorithm
+      (res, functionTree) := differentiateCalls(inExp, inDiffwrtCref, inInputData, inDiffType, inFunctionTree, maxIter-1);
+      (res, _) := ExpressionSimplify.simplify1(res);
     then (res, functionTree);
 
-    // differentiate binary
-    case DAE.BINARY() equation
+    case DAE.RECORD(path = p, exps = expl, comp = strLst, ty=tp) algorithm
+      sub := {};
+      functionTree := inFunctionTree;
+      for e in expl loop
+        (e1, functionTree) := differentiateExp(e, inDiffwrtCref, inInputData, inDiffType, functionTree, maxIter);
+        sub := e1 :: sub;
+      end for;
+    then (DAE.RECORD(p, listReverse(sub), strLst, tp), functionTree);
 
-      (res, functionTree) = differentiateBinary(inExp, inDiffwrtCref, inInputData, inDiffType, inFunctionTree, maxIter-1);
-      (res) = ExpressionSimplify.simplifyBinaryExp(res);
-
+    case DAE.ARRAY(ty=tp, scalar=b, array=expl) algorithm
+      (expl, functionTree) := List.map3Fold(expl, function differentiateExp(maxIter=maxIter-1), inDiffwrtCref, inInputData, inDiffType, inFunctionTree);
+      res := DAE.ARRAY(tp, b, expl);
+      (res, _) := ExpressionSimplify.simplify1(res);
     then (res, functionTree);
 
-    // differentiate operator
-    case DAE.UNARY(operator=op, exp=e1) equation
-
-      (res, functionTree) = differentiateExp(e1, inDiffwrtCref, inInputData, inDiffType, inFunctionTree, maxIter-1);
-
-      res = DAE.UNARY(op,res);
-      (res) = ExpressionSimplify.simplifyUnaryExp(res);
-
+    case DAE.MATRIX(ty=tp, integer=i, matrix=matrix) algorithm
+      (dmatrix, functionTree) := List.map3FoldList(matrix, function differentiateExp(maxIter=maxIter-1), inDiffwrtCref, inInputData, inDiffType, inFunctionTree);
+      res := DAE.MATRIX(tp, i, dmatrix);
+      (res, _) := ExpressionSimplify.simplify1(res);
     then (res, functionTree);
 
-    // differentiate cast
-    case DAE.CAST(ty=tp, exp=e1) equation
+    case DAE.RANGE() then (inExp, inFunctionTree);
 
-      (res, functionTree) = differentiateExp(e1, inDiffwrtCref, inInputData, inDiffType, inFunctionTree, maxIter-1);
-      (res,_) = ExpressionSimplify.simplify1(res);
+    case DAE.TUPLE(PR=expl) algorithm
+      (expl, functionTree) := List.map3Fold(expl, function differentiateExp(maxIter=maxIter-1), inDiffwrtCref, inInputData, inDiffType, inFunctionTree);
+      res := DAE.TUPLE(expl);
+      (res, _) := ExpressionSimplify.simplify1(res);
+    then (res, functionTree);
 
+    case DAE.CAST(ty=tp, exp=e1) algorithm
+      (res, functionTree) := differentiateExp(e1, inDiffwrtCref, inInputData, inDiffType, inFunctionTree, maxIter-1);
+      (res, _) := ExpressionSimplify.simplify1(res);
     then (DAE.CAST(tp, res), functionTree);
 
-    // differentiate asub
-    case DAE.ASUB(exp=e1, sub=sub) equation
-
-      (res1, functionTree) = differentiateExp(e1, inDiffwrtCref, inInputData, inDiffType, inFunctionTree, maxIter-1);
-
-      res = Expression.makeASUB(res1,sub);
-      (res,_) = ExpressionSimplify.simplify1(res);
-
+    case DAE.ASUB(exp=e1, sub=sub) algorithm
+      (res1, functionTree) := differentiateExp(e1, inDiffwrtCref, inInputData, inDiffType, inFunctionTree, maxIter-1);
+      res := Expression.makeASUB(res1,sub);
+      (res, _) := ExpressionSimplify.simplify1(res);
     then (res, functionTree);
 
-    case DAE.ARRAY(ty=tp, scalar=b, array=expl) equation
-
-      (expl, functionTree) = List.map3Fold(expl, function differentiateExp(maxIter=maxIter-1), inDiffwrtCref, inInputData, inDiffType, inFunctionTree);
-
-      res = DAE.ARRAY(tp, b, expl);
-      (res,_) = ExpressionSimplify.simplify1(res);
-
-    then (res, functionTree);
-
-    case DAE.MATRIX(ty=tp, integer=i, matrix=matrix) equation
-
-      (dmatrix, functionTree) = List.map3FoldList(matrix, function differentiateExp(maxIter=maxIter-1), inDiffwrtCref, inInputData, inDiffType, inFunctionTree);
-
-      res = DAE.MATRIX(tp, i, dmatrix);
-      (res,_) = ExpressionSimplify.simplify1(res);
-
-    then (res, functionTree);
-
-     // differentiate tsub
     case DAE.TSUB(exp=e1, ix=i, ty=tp)
       algorithm
         (res1, functionTree) := differentiateExp(e1, inDiffwrtCref, inInputData, inDiffType, inFunctionTree, maxIter-1);
@@ -715,8 +713,6 @@ algorithm
         end if;
       then (res, functionTree);
 
-
-    // differentiate rsub
     case e1 as DAE.RSUB()
       algorithm
         // Try simplifying first.
@@ -744,41 +740,7 @@ algorithm
         end if;
       then (res, functionTree);
 
-    // differentiate tuple
-    case DAE.TUPLE(PR=expl) equation
-
-      (expl, functionTree) = List.map3Fold(expl, function differentiateExp(maxIter=maxIter-1), inDiffwrtCref, inInputData, inDiffType, inFunctionTree);
-
-      res = DAE.TUPLE(expl);
-      (res,_) = ExpressionSimplify.simplify1(res);
-
-    then (res, functionTree);
-
-    case DAE.IFEXP(expCond=e1, expThen=e2, expElse=e3) equation
-
-      (res1, functionTree) = differentiateExp(e2, inDiffwrtCref, inInputData, inDiffType, inFunctionTree, maxIter-1);
-      (res2, functionTree) = differentiateExp(e3, inDiffwrtCref, inInputData, inDiffType, functionTree, maxIter-1);
-
-      res = DAE.IFEXP(e1, res1, res2);
-      (res,_) = ExpressionSimplify.simplify1(res);
-
-    then (res, functionTree);
-
-    // boolean expression, e.g. relation, are left as they are
-    case DAE.RELATION()
-    then (inExp, inFunctionTree);
-
-    case DAE.LBINARY()
-    then (inExp, inFunctionTree);
-
-    case DAE.LUNARY()
-    then (inExp, inFunctionTree);
-
-    case DAE.SIZE()
-    then (inExp, inFunctionTree);
-
-    case DAE.RANGE()
-    then (inExp, inFunctionTree);
+    case DAE.SIZE() then (inExp, inFunctionTree);
 
     case DAE.REDUCTION()
       algorithm
@@ -831,7 +793,6 @@ algorithm
       DAE.Exp elseif_exp;
       DAE.Else elseif_else_;
       list<DAE.Exp> expLst, dexpLst, expLstRHS;
-      Integer index;
       list<tuple<DAE.Exp, DAE.Exp>> exptl;
       list<DAE.Statement> statementLst, restStatements, derivedStatements1, derivedStatements2, else_statementLst, elseif_statementLst;
       String s1,s2;
@@ -888,14 +849,14 @@ algorithm
         (derivedStatements2, functions) = differentiateStatements(restStatements, inDiffwrtCref, inInputData, inDiffType, derivedStatements2, functions, maxIter);
       then (derivedStatements2, functions);
 
-    case DAE.STMT_FOR(type_=type_, iterIsArray=iterIsArray, iter=ident, index=index, range=exp, statementLst=statementLst, source=source)::restStatements
+    case DAE.STMT_FOR(type_=type_, iterIsArray=iterIsArray, iter=ident, range=exp, statementLst=statementLst, source=source)::restStatements
       equation
         cref = ComponentReference.makeCrefIdent(ident, DAE.T_INTEGER_DEFAULT, {});
-        controlVar = BackendDAE.VAR(cref, BackendDAE.DISCRETE(), DAE.BIDIR(), DAE.NON_PARALLEL(), DAE.T_REAL_DEFAULT, NONE(), NONE(), {}, DAE.emptyElementSource, NONE(), NONE(), DAE.BCONST(false), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), false);
+        controlVar = BackendDAE.VAR(cref, BackendDAE.DISCRETE(), DAE.BIDIR(), DAE.NON_PARALLEL(), DAE.T_REAL_DEFAULT, NONE(), NONE(), {}, DAE.emptyElementSource, NONE(), NONE(), NONE(), NONE(), DAE.NON_CONNECTOR(), DAE.NOT_INNER_OUTER(), false,false);
         inputData = addGlobalVars({controlVar}, inInputData);
         (derivedStatements1, functions) = differentiateStatements(statementLst, inDiffwrtCref, inputData, inDiffType, {}, inFunctionTree, maxIter);
 
-        derivedStatements1 = {DAE.STMT_FOR(type_, iterIsArray, ident, index, exp, derivedStatements1, source)};
+        derivedStatements1 = {DAE.STMT_FOR(type_, iterIsArray, ident, exp, derivedStatements1, source)};
 
         derivedStatements2 = listAppend(derivedStatements1, inStmtsAccum);
         (derivedStatements2, functions) = differentiateStatements(restStatements, inDiffwrtCref, inInputData, inDiffType, derivedStatements2, functions, maxIter);
@@ -1362,6 +1323,18 @@ algorithm
   if debug then print("outCref: " + ComponentReference.printComponentRefStr(outCref) +"\n"); end if;
 end createSeedCrefName;
 
+public function isSeedCref
+"Returns true if the cref is prefixed with '$SEED'"
+  input DAE.ComponentRef cr;
+  output Boolean b;
+algorithm
+  b := matchcontinue(cr)
+    case(DAE.CREF_IDENT())  then (substring(cr.ident, 1, 4) == "Seed");
+    case(DAE.CREF_QUAL())   then isSeedCref(cr.componentRef);
+    else false;
+  end matchcontinue;
+end isSeedCref;
+
 protected function differentiateCalls
 "
 function: differentiateCalls
@@ -1391,7 +1364,7 @@ algorithm
       BackendDAE.Variables knvars;
 
       DAE.CallAttributes attr;
-      DAE.ComponentRef cr;
+      DAE.ComponentRef cr, cj;
       DAE.Exp e, e1, e2, zero;
       DAE.Exp res, res1, actual, simplified;
       DAE.Type tp;
@@ -1436,6 +1409,20 @@ algorithm
         i = i + 1;
       then
         (DAE.CALL(path,{e,DAE.ICONST(i)},attr), inFunctionTree);
+
+    // special case for daeMode:
+    // der(x) gets differentiated to $cj * x.Seed
+    // (cj aka alpha, provided by the dae mode integrator)
+    case (DAE.CALL(path = Absyn.IDENT(name = "der"),expLst = {e},attr=attr), _, BackendDAE.DIFFINPUTDATA(matrixName=SOME(matrixName)), BackendDAE.GENERIC_GRADIENT(true), _)
+      algorithm
+        cj := DAE.CREF_IDENT(SymbolicJacobian.DAE_CJ, DAE.T_REAL_DEFAULT, {});
+        cr := Expression.expCref(e);
+        tp := Expression.typeof(e);
+        cr := createSeedCrefName(cr, matrixName);
+        res := Expression.makeCrefExp(cr, tp);
+        res := DAE.BINARY(Expression.makeCrefExp(cj, DAE.T_REAL_DEFAULT), DAE.MUL(DAE.T_REAL_DEFAULT), res);
+      then
+        (res, inFunctionTree);
 
     case (DAE.CALL(path=Absyn.IDENT(name = "der"),expLst = {e}), _, BackendDAE.DIFFINPUTDATA(matrixName=SOME(matrixName)), _, _)
       equation
@@ -1761,18 +1748,20 @@ protected function differentiateCallExpNArg "
 algorithm
   (outDiffedExp,outFunctionTree) := match(name,inExpl,inAttr)
     local
-      DAE.Exp e, e1, e2, cond, etmp;
+      DAE.Exp e, e1, e2, e3, e4, cond, etmp;
       DAE.Exp res, res1, res2;
       list<DAE.Exp> expl, dexpl;
       DAE.Type tp;
       DAE.FunctionTree funcs;
       String e_str;
       Integer i;
+      list<DAE.ComponentRef> seeds;
+      BackendVarTransform.VariableReplacements repl;
 
     case ("smooth",{DAE.ICONST(i),e2}, DAE.CALL_ATTR(ty=tp))
       equation
         (res1, funcs) = differentiateExp(e2,inDiffwrtCref,inInputData,inDiffType,inFunctionTree, maxIter);
-        e1 = Expression.expSub(DAE.ICONST(i), DAE.ICONST(1));
+        e1 = DAE.ICONST(i-1);
         res2 = if intGe(i,1) then Expression.makePureBuiltinCall("smooth", {e1, res1}, tp) else res1;
       then
         (res2, funcs);
@@ -1833,14 +1822,14 @@ algorithm
       then
         (DAE.IFEXP(DAE.CALL(Absyn.IDENT("noEvent"),{DAE.RELATION(e1,DAE.LESS(tp),e2,-1,NONE())},DAE.callAttrBuiltinBool), res1, res2), funcs);
 
-    // diff(div(e1,e2)) =  diff(if noEvent(e1 > 0) then floor(e1/e2) else ceil(e1/e2)) = 0.0;
+    // diff(div(e1,e2)) = diff(if noEvent(e1 > 0) then floor(e1/e2) else ceil(e1/e2)) = 0.0;
     case ("div", {_,_}, DAE.CALL_ATTR(ty=tp))
       equation
         (res1, _) = Expression.makeZeroExpression(Expression.arrayDimension(tp));
       then
         (res1, inFunctionTree);
 
-    // diff(mod(e1,e2)) =  diff(e1 - e2*floor(e1/e2))
+    // diff(mod(e1,e2)) = diff(e1 - e2*floor(e1/e2))
     case ("mod", {e1,e2}, DAE.CALL_ATTR(ty=tp))
       equation
         etmp = Expression.makePureBuiltinCall("floor", {DAE.BINARY(e1, DAE.DIV(tp), e2)}, tp);
@@ -1857,11 +1846,36 @@ algorithm
       then
         (res1, funcs);
 
+    case ("delay", {_, e2, e3, e4}, DAE.CALL_ATTR(ty=tp))
+      algorithm
+        // 1. differentiate delayed expression
+        (e, funcs) := differentiateExp(e2, inDiffwrtCref, inInputData, inDiffType, inFunctionTree, maxIter);
+        // 2. filter all seeds from e
+        seeds := list(cref for cref guard(isSeedCref(cref)) in Expression.extractUniqueCrefsFromExp(e, false));
+        // 3. create empty replacement rules
+        repl := BackendVarTransform.emptyReplacements();
+        repl := BackendVarTransform.addReplacements(repl, seeds, List.fill(DAE.ICONST(0), listLength(seeds)), NONE());
+        res := DAE.RCONST(0);
+        // 4. create delayed expression for each seed and multiply each delayed with corresponding seed and create sum
+        for seed in seeds loop
+          repl := BackendVarTransform.addReplacement(repl, seed, DAE.ICONST(1), NONE());
+          // create call with seed replaced by 1 and all other seeds replaced by 0
+          (res1, _) := BackendVarTransform.replaceExp(e, repl, NONE());
+          res1 := DAE.CALL(Absyn.IDENT(name), {DAE.ICONST(-1), res1, e3, e4}, inAttr);
+          // multiply call with correspondings seed and add to rest
+          res := DAE.BINARY(DAE.BINARY(DAE.CREF(seed, tp), DAE.MUL(tp), res1), DAE.ADD(tp), res);
+          repl := BackendVarTransform.addReplacement(repl, seed, DAE.ICONST(0), NONE());
+        end for;
+        (res, _) := ExpressionSimplify.simplify(res);
+      then
+        (res, funcs);
+
     case ("sample", _, DAE.CALL_ATTR(ty=tp))
       equation
         (res1, _) = Expression.makeZeroExpression(Expression.arrayDimension(tp));
       then
        (res1, inFunctionTree);
+
     /* floor ceil and interger are expanded by the zeroCrossing index, thus they
        have 2 arguments */
     case ("floor", _, DAE.CALL_ATTR(ty=tp))
@@ -2199,6 +2213,7 @@ algorithm
       String funcname, s1;
       list<DAE.FuncArg> falst;
 
+
     /* ticket5459
     if the function call does not contain the cref, the derivative is zero
     prevents failing of this function
@@ -2367,7 +2382,7 @@ algorithm
         funcname = BackendUtil.modelicaStringToCStr(AbsynUtil.pathString(path), false);
         diffFuncData = BackendDAE.emptyInputData;
          diffFuncData.matrixName = SOME(funcname);
-        (dexplZero, functions) = List.map3Fold(expl1, function differentiateExp(maxIter=maxIter), DAE.CREF_IDENT("$",DAE.T_REAL_DEFAULT,{}), diffFuncData, BackendDAE.GENERIC_GRADIENT(), functions);
+        (dexplZero, functions) = List.map3Fold(expl1, function differentiateExp(maxIter=maxIter), DAE.CREF_IDENT("$",DAE.T_REAL_DEFAULT,{}), diffFuncData, BackendDAE.GENERIC_GRADIENT(false), functions);
         // debug dump
         if Flags.isSet(Flags.DEBUG_DIFFERENTIATION) then
           print("### differentiated argument list:\n");
@@ -2526,7 +2541,7 @@ function tryZeroDiff
   output Boolean success;
 algorithm
   try
-   (explist, functions) := List.map3Fold(explist, function differentiateExp(maxIter=maxIter), DAE.CREF_IDENT("$",DAE.T_REAL_DEFAULT,{}), BackendDAE.emptyInputData, BackendDAE.GENERIC_GRADIENT(), functions);
+   (explist, functions) := List.map3Fold(explist, function differentiateExp(maxIter=maxIter), DAE.CREF_IDENT("$",DAE.T_REAL_DEFAULT,{}), BackendDAE.emptyInputData, BackendDAE.GENERIC_GRADIENT(false), functions);
    success := true;
   else
    explist := {};

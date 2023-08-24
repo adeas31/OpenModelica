@@ -202,6 +202,8 @@ protected constant list<SCode.Element> uncertaintyComps = {
           SCode.COMPONENT("sought",commonPrefixes,
           attrConst,Absyn.TPATH(Absyn.IDENT("EnumType"),NONE()),SCode.NOMOD(),SCode.noComment,NONE(),AbsynUtil.dummyInfo),
           SCode.COMPONENT("refine",commonPrefixes,
+          attrConst,Absyn.TPATH(Absyn.IDENT("EnumType"),NONE()),SCode.NOMOD(),SCode.noComment,NONE(),AbsynUtil.dummyInfo),
+          SCode.COMPONENT("propagate",commonPrefixes,
           attrConst,Absyn.TPATH(Absyn.IDENT("EnumType"),NONE()),SCode.NOMOD(),SCode.noComment,NONE(),AbsynUtil.dummyInfo)} "The Uncertainty enumeration" ;
 
 protected constant SCode.Element stateSelectType = SCode.CLASS("StateSelect",commonPrefixes,SCode.NOT_ENCAPSULATED(),SCode.NOT_PARTIAL(),SCode.R_ENUMERATION(),
@@ -309,7 +311,7 @@ protected constant SCode.Element objectiveVarComp =
             SCode.noComment, NONE(), AbsynUtil.dummyInfo);
 
 protected constant list<SCode.Element> basicTypes = {clockType, rlType, intType, strType, boolType, enumType, ExternalObjectType, realType, integerType, stringType, booleanType, uncertaintyType};
-protected constant list<SCode.Element> basicTypesNF = {clockType, rlType, intType, strType, boolType, enumType, realType, integerType, stringType, booleanType};
+protected constant list<SCode.Element> basicTypesNF = {rlType, intType, strType, boolType, enumType, realType, integerType, stringType, booleanType};
 
 public function getBasicTypes
   output list<SCode.Element> tys;

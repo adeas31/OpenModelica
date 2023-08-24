@@ -32,6 +32,7 @@
 encapsulated uniontype NFType
 protected
   import Type = NFType;
+  import Array;
   import List;
   import Class = NFClass;
   import IOStream;
@@ -45,6 +46,7 @@ public
   import ComplexType = NFComplexType;
   import NFFunction.Function;
   import Record = NFRecord;
+  import UnorderedMap;
 
   type FunctionType = enumeration(
     FUNCTIONAL_PARAMETER "Function parameter of function type.",
@@ -78,8 +80,10 @@ public
     list<String> literals;
   end ENUMERATION;
 
-  record ENUMERATION_ANY "enumeration(:)"
-  end ENUMERATION_ANY;
+  // TODO: Remove this, which requires updating the bootstrapping sources to
+  //       avoid breaking the ffi interface.
+  record __ENUMERATION_ANY_NOT_USED__
+  end __ENUMERATION_ANY_NOT_USED__;
 
   record ARRAY
     Type elementType;
@@ -132,6 +136,12 @@ public
     Type falseType;
     Branch matchedBranch;
   end CONDITIONAL_ARRAY;
+
+  record UNTYPED
+    "Used by untyped components to store type information needed during typing."
+    InstNode typeNode;
+    array<Dimension> dimensions;
+  end UNTYPED;
 
   // TODO: Fix constants in uniontypes and use these wherever applicable to
   // speed up comparisons using referenceEq.
@@ -218,6 +228,10 @@ public
     input Integer N;
     input output Type ty;
   algorithm
+    if N == 0 then
+      return;
+    end if;
+
     ty := match ty
       local
         list<Dimension> dims;
@@ -260,17 +274,6 @@ public
       else false;
     end match;
   end isReal;
-
-  function isRealRecursive
-    input Type ty;
-    output Boolean isReal;
-  algorithm
-    isReal := match ty
-      case REAL()   then true;
-      case ARRAY()  then isRealRecursive(ty.elementType);
-      else false;
-    end match;
-  end isRealRecursive;
 
   function isBoolean
     input Type ty;
@@ -446,10 +449,19 @@ public
   algorithm
     isEnum := match ty
       case ENUMERATION() then true;
-      case ENUMERATION_ANY() then true;
       else false;
     end match;
   end isEnumeration;
+
+  function isUnspecifiedEnumeration
+    input Type ty;
+    output Boolean res;
+  algorithm
+    res := match ty
+      case ENUMERATION(literals = {}) then true;
+      else false;
+    end match;
+  end isUnspecifiedEnumeration;
 
   function isComplex
     input Type ty;
@@ -460,6 +472,30 @@ public
       else false;
     end match;
   end isComplex;
+
+  function isComplexArray
+    input Type ty;
+    output Boolean isComplex;
+  algorithm
+    isComplex := match ty
+      case ARRAY() then isComplex(ty.elementType);
+      else false;
+    end match;
+  end isComplexArray;
+
+  function complexNode
+    input Type ty;
+    output InstNode node;
+  algorithm
+    COMPLEX(cls = node) := ty;
+  end complexNode;
+
+  function complexComponents
+    input Type ty;
+    output array<InstNode> comps;
+  algorithm
+    comps := ClassTree.getComponents(Class.classTree(InstNode.getClass(complexNode(ty))));
+  end complexComponents;
 
   function isConnector
     input Type ty;
@@ -551,7 +587,6 @@ public
       case BOOLEAN() then true;
       case CLOCK() then true;
       case ENUMERATION() then true;
-      case ENUMERATION_ANY() then true;
       case FUNCTION() then isScalarBuiltin(Function.returnType(ty.fn));
       else false;
     end match;
@@ -583,6 +618,7 @@ public
   algorithm
     isKnown := match ty
       case UNKNOWN() then false;
+      case UNTYPED() then false;
       else true;
     end match;
   end isKnown;
@@ -596,6 +632,17 @@ public
       else false;
     end match;
   end isPolymorphic;
+
+  function isPolymorphicNamed
+    input Type ty;
+    input String name;
+    output Boolean res;
+  algorithm
+    res := match ty
+      case POLYMORPHIC() then name == ty.name;
+      else false;
+    end match;
+  end isPolymorphicNamed;
 
   function firstTupleType
     input Type ty;
@@ -680,6 +727,8 @@ public
       case ARRAY() then ty.dimensions;
       case FUNCTION() then arrayDims(Function.returnType(ty.fn));
       case METABOXED() then arrayDims(ty.ty);
+      case CONDITIONAL_ARRAY() then List.fill(Dimension.UNKNOWN(), dimensionCount(ty.trueType));
+      case UNTYPED() then arrayList(ty.dimensions);
       else {};
     end match;
   end arrayDims;
@@ -724,6 +773,7 @@ public
       case CONDITIONAL_ARRAY() then dimensionCount(ty.trueType);
       case FUNCTION() then dimensionCount(Function.returnType(ty.fn));
       case METABOXED() then dimensionCount(ty.ty);
+      case UNTYPED() then arrayLength(ty.dimensions);
       else 0;
     end match;
   end dimensionCount;
@@ -844,19 +894,22 @@ public
       case Type.STRING() then "String";
       case Type.BOOLEAN() then "Boolean";
       case Type.CLOCK() then "Clock";
-      case Type.ENUMERATION() then "enumeration " + AbsynUtil.pathString(ty.typePath) +
+      case Type.ENUMERATION() then if listEmpty(ty.literals) then "enumeration(:)" else "enumeration " + AbsynUtil.pathString(ty.typePath) +
         "(" + stringDelimitList(ty.literals, ", ") + ")";
-      case Type.ENUMERATION_ANY() then "enumeration(:)";
-      case Type.ARRAY() then toString(ty.elementType) + "[" + stringDelimitList(List.map(ty.dimensions, Dimension.toString), ", ") + "]";
+      case Type.ARRAY() then List.toString(ty.dimensions, Dimension.toString, toString(ty.elementType), "[", ", ", "]", false);
       case Type.TUPLE() then "(" + stringDelimitList(List.map(ty.types, toString), ", ") + ")";
       case Type.NORETCALL() then "()";
       case Type.UNKNOWN() then "unknown()";
       case Type.COMPLEX() then AbsynUtil.pathString(InstNode.scopePath(ty.cls));
       case Type.FUNCTION() then Function.typeString(ty.fn);
-      case Type.METABOXED() then "#" + toString(ty.ty);
-      case Type.POLYMORPHIC() then "<" + ty.name + ">";
+      case Type.METABOXED() then toString(ty.ty);
+      case Type.POLYMORPHIC()
+        then if Util.stringStartsWith("__", ty.name) then
+          substring(ty.name, 3, stringLength(ty.name)) else "<" + ty.name + ">";
+
       case Type.ANY() then "$ANY$";
       case Type.CONDITIONAL_ARRAY() then toString(ty.trueType) + "|" + toString(ty.falseType);
+      case Type.UNTYPED() then List.toString(arrayList(ty.dimensions), Dimension.toString, InstNode.name(ty.typeNode), "[", ", ", "]", false);
       else
         algorithm
           Error.assertion(false, getInstanceName() + " got unknown type: " + anyString(ty), sourceInfo());
@@ -875,9 +928,8 @@ public
       case Type.STRING() then "String";
       case Type.BOOLEAN() then "Boolean";
       case Type.CLOCK() then "Clock";
-      case Type.ENUMERATION() then Util.makeQuotedIdentifier(AbsynUtil.pathString(ty.typePath));
-      case Type.ENUMERATION_ANY() then "enumeration(:)";
-      case Type.ARRAY() then toFlatString(ty.elementType) + "[" + stringDelimitList(List.map(ty.dimensions, Dimension.toFlatString), ", ") + "]";
+      case Type.ENUMERATION() then if listEmpty(ty.literals) then "enumeration(:)" else Util.makeQuotedIdentifier(AbsynUtil.pathString(ty.typePath));
+      case Type.ARRAY() then List.toString(ty.dimensions, Dimension.toFlatString, toFlatString(ty.elementType), "[", ", ", "]", false);
       case Type.TUPLE() then "(" + stringDelimitList(List.map(ty.types, toFlatString), ", ") + ")";
       case Type.NORETCALL() then "()";
       case Type.UNKNOWN() then "unknown()";
@@ -887,6 +939,7 @@ public
       case Type.POLYMORPHIC() then "<" + ty.name + ">";
       case Type.ANY() then "$ANY$";
       case Type.CONDITIONAL_ARRAY() then toFlatString(ty.trueType) + "|" + toFlatString(ty.falseType);
+      case Type.UNTYPED() then List.toString(arrayList(ty.dimensions), Dimension.toFlatString, InstNode.name(ty.typeNode), "[", ", ", "]", false);
       else
         algorithm
           Error.assertion(false, getInstanceName() + " got unknown type: " + anyString(ty), sourceInfo());
@@ -1141,6 +1194,11 @@ public
 
       case (TUPLE(), TUPLE()) then false;
       case (COMPLEX(), COMPLEX()) then InstNode.isSame(ty1.cls, ty2.cls);
+
+      case (UNTYPED(), UNTYPED())
+        then InstNode.refEqual(ty1.typeNode, ty2.typeNode) and
+             Array.isEqualOnTrue(ty1.dimensions, ty2.dimensions, Dimension.isEqualKnown);
+
       else true;
     end match;
   end isEqual;
@@ -1180,28 +1238,43 @@ public
 
   function recordFields
     input Type recordType;
-    output list<Record.Field> fields;
+    output list<Record.Field> field_lst;
   algorithm
-    fields := match recordType
-      case COMPLEX(complexTy = ComplexType.RECORD(fields = fields)) then fields;
+    field_lst := match recordType
+      local
+        array<Record.Field> fields;
+      case COMPLEX(complexTy = ComplexType.RECORD(fields = fields)) then arrayList(fields);
       else {};
     end match;
   end recordFields;
 
   function setRecordFields
-    input list<Record.Field> fields;
+    input list<Record.Field> field_lst;
     input output Type recordType;
   algorithm
     recordType := match recordType
       local
         InstNode rec_node;
+        UnorderedMap<String, Integer> indexMap;
+        array<Record.Field> fields = listArray(field_lst);
 
-      case COMPLEX(complexTy = ComplexType.RECORD(constructor = rec_node))
-        then COMPLEX(recordType.cls, ComplexType.RECORD(rec_node, fields));
+      case COMPLEX(complexTy = ComplexType.RECORD(constructor = rec_node)) algorithm
+        indexMap := UnorderedMap.new<Integer>(stringHashDjb2, stringEq, arrayLength(fields));
+        updateRecordFieldsIndexMap(fields, indexMap);
+      then COMPLEX(recordType.cls, ComplexType.RECORD(rec_node, fields, indexMap));
 
       else recordType;
     end match;
   end setRecordFields;
+
+  function updateRecordFieldsIndexMap
+    input array<Record.Field> fields;
+    input UnorderedMap<String, Integer> indexMap;
+  algorithm
+   for i in 1:arrayLength(fields) loop
+      UnorderedMap.add(Record.Field.name(fields[i]), i, indexMap);
+    end for;
+  end updateRecordFieldsIndexMap;
 
   function enumName
     input Type ty;
@@ -1301,10 +1374,10 @@ public
   function sizeOf
     input Type ty;
     output Integer sz;
-
     function fold_comp_size
       input InstNode comp;
-      input output Integer sz = sz + sizeOf(InstNode.getType(comp));
+      input Integer sz;
+      output Integer outSize = sz + sizeOf(InstNode.getType(comp));
     end fold_comp_size;
   algorithm
     sz := match ty
@@ -1314,12 +1387,27 @@ public
       case BOOLEAN() then 1;
       case CLOCK() then 1;
       case ENUMERATION() then 1;
-      case ARRAY() then sizeOf(ty.elementType) * product(Dimension.size(d) for d in ty.dimensions);
+      case ARRAY() then sizeOf(ty.elementType) * Dimension.sizesProduct(ty.dimensions);
+      case TUPLE() then List.fold(list(sizeOf(t) for t in ty.types), intAdd, 0);
       case COMPLEX()
         then ClassTree.foldComponents(Class.classTree(InstNode.getClass(ty.cls)), fold_comp_size, 0);
       else 0;
     end match;
   end sizeOf;
+
+  function complexSize
+    "Returns the size of complex part of the type as an option.
+    Arrays of complex will only return the size of the contained complex type.
+    Non-complex types will return NONE()."
+    input Type ty;
+    output Option<Integer> sz;
+  algorithm
+    sz := match ty
+      case ARRAY()    then complexSize(ty.elementType);
+      case COMPLEX()  then SOME(sizeOf(ty));
+                      else NONE();
+    end match;
+  end complexSize;
 
   annotation(__OpenModelica_Interface="frontend");
 end NFType;

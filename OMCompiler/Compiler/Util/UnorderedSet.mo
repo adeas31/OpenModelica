@@ -46,7 +46,6 @@ protected
 public
   partial function Hash
     input T key;
-    input Integer mod;
     output Integer hash;
   end Hash;
 
@@ -122,7 +121,7 @@ public
     end if;
   end add;
 
-  function addNoUpdCheck
+  function addNew
     "Adds a key to the set without checking if it already exists. Faster than
      add since it doesn't need to check if the key exists, but will lead to
      duplicate keys if it actually does exist in the set already. Might trigger
@@ -133,9 +132,9 @@ public
     Hash hashfn = set.hashFn;
     Integer hash, pos;
   algorithm
-    hash := hashfn(key, arrayLength(Mutable.access(set.buckets)));
+    hash := intMod(hashfn(key), arrayLength(Mutable.access(set.buckets)));
     addKey(key, hash, set);
-  end addNoUpdCheck;
+  end addNew;
 
   function addUnique
     "Adds a key to the set, but fails if the key already exists.
@@ -167,7 +166,7 @@ public
     list<T> bucket;
     Option<T> okey;
   algorithm
-    hash := hashfn(key, arrayLength(buckets));
+    hash := intMod(hashfn(key), arrayLength(buckets));
     bucket := arrayGet(buckets, hash + 1);
 
     (bucket, okey) := List.deleteMemberOnTrue(key, bucket, eqfn);
@@ -297,6 +296,91 @@ public
     end for;
   end fold;
 
+/*
+  function map<OT>
+    "Applies a function to all keys in the given set and returns a new set
+     with the new keys."
+    input UnorderedSet<T> set;
+    input MapFn fn;
+    input OutHash hash;
+    input OutKeyEq keyEq;
+    output UnorderedSet<OT> outSet;
+
+    partial function MapFn
+      input T key;
+      output OT outKey;
+    end MapFn;
+    partial function OutHash
+      input OT key;
+      input Integer mod;
+      output Integer hash;
+    end OutHash;
+    partial function OutKeyEq
+      input OT key1;
+      input OT key2;
+      output Boolean equal;
+    end OutKeyEq;
+  algorithm
+    outSet := new<OT>(hash, keyEq, Util.nextPrime(Mutable.access(set.size)));
+    for b in Mutable.access(set.buckets) loop
+      for k in b loop
+        add(fn(k), outSet);
+      end for;
+    end for;
+  end map;
+*/
+
+  function apply
+    "Replaces all keys in the given set with the results of the given function
+     when applied to all keys. Equivalent to a rehash."
+    input UnorderedSet<T> set;
+    input ApplyFn fn;
+
+    partial function ApplyFn
+      input output T key;
+    end ApplyFn;
+  protected
+    Hash hashfn = set.hashFn;
+    KeyEq eqfn = set.eqFn;
+    Integer bucket_count, hash, size = 0;
+    array<list<T>> new_buckets;
+    T newKey;
+    list<T> bucket;
+    Boolean duplicate;
+  algorithm
+    // Make a new bucket array.
+    bucket_count := Util.nextPrime(Mutable.access(set.size));
+    new_buckets := arrayCreate(bucket_count, {});
+
+    for b in Mutable.access(set.buckets) loop
+      for k in b loop
+        // Apply the function to the key
+        newKey := fn(k);
+        hash := intMod(hashfn(newKey), bucket_count);
+        bucket := arrayGet(new_buckets, hash + 1);
+
+        // check if we have a duplicate
+        duplicate := false;
+        for nk in bucket loop
+          if eqfn(nk, newKey) then
+            duplicate := true;
+            break;
+          end if;
+        end for;
+
+        // Add the result to the new bucket if it is not already there.
+        if not duplicate then
+          arrayUpdate(new_buckets, hash + 1, newKey :: bucket);
+          size := size + 1;
+        end if;
+      end for;
+    end for;
+
+    // Replace the old bucket array with the new one and update the size of the set.
+    Mutable.update(set.buckets, new_buckets);
+    Mutable.update(set.size, size);
+  end apply;
+
   function all
     "Returns true if the given function returns true for all elements in the set,
      otherwise false."
@@ -387,7 +471,7 @@ public
   function size
     "Returns the number of elements the set contains."
     input UnorderedSet<T> set;
-    output Integer size = Mutable.access(set.size);
+    output Integer s = Mutable.access(set.size);
   end size;
 
   function isEmpty
@@ -426,7 +510,7 @@ public
     // Rehash all the keys in the old buckets and add them to the new.
     for b in old_buckets loop
       for k in b loop
-        hash := hashfn(k, bucket_count);
+        hash := intMod(hashfn(k), bucket_count);
         arrayUpdate(new_buckets, hash + 1, k :: arrayGet(new_buckets, hash + 1));
       end for;
     end for;
@@ -463,6 +547,33 @@ public
     print("\n");
   end dump;
 
+  function unique_list<T>
+    "Takes a list of elements and returns a list with duplicates removed, so that
+     each element in the new list is unique."
+    input list<T> inList;
+    input UnorderedSet.Hash hashFunc;
+    input UnorderedSet.KeyEq keyEqFunc;
+    output list<T> outList = toList(fromList(inList, hashFunc, keyEqFunc));
+  end unique_list;
+
+  function union
+    input UnorderedSet<T> set1;
+    input UnorderedSet<T> set2;
+    output UnorderedSet<T> set;
+  protected
+    list<T> lst;
+  algorithm
+    if Mutable.access(set1.size) > Mutable.access(set2.size) then
+      set := set1;
+      lst := toList(set2);
+    else
+      set := set2;
+      lst := toList(set1);
+    end if;
+    for e in lst loop
+      add(e, set);
+    end for;
+  end union;
 protected
   function find
     "Tries to find a key in the set, returning the key as an option, and the
@@ -477,7 +588,7 @@ protected
     array<list<T>> buckets = Mutable.access(set.buckets);
     list<T> bucket;
   algorithm
-    hash := hashfn(key, arrayLength(buckets));
+    hash := intMod(hashfn(key), arrayLength(buckets));
     bucket := arrayGet(buckets, hash + 1);
 
     for k in bucket loop
@@ -505,7 +616,7 @@ protected
       buckets := Mutable.access(set.buckets);
       // The bucket count has changed so we need to rehash the key we're going
       // to add too.
-      h := hashfn(key, arrayLength(buckets));
+      h := intMod(hashfn(key), arrayLength(buckets));
     else
       buckets := Mutable.access(set.buckets);
       h := hash;

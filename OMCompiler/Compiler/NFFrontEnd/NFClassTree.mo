@@ -38,6 +38,7 @@ encapsulated package NFClassTree
   import Import = NFImport;
   import NFBuiltin;
   import NFDuplicateTree;
+  import UnorderedMap;
 
 protected
   import Array;
@@ -54,11 +55,15 @@ protected
   import NFInstNode.InstNodeType;
   import Restriction = NFRestriction;
   import LookupTree = NFLookupTree;
+
 public
   constant ClassTree EMPTY = ClassTree.PARTIAL_TREE(LookupTree.EMPTY(),
       listArray({}), listArray({}), listArray({}), listArray({}), NFDuplicateTree.EMPTY());
   constant ClassTree EMPTY_FLAT = ClassTree.FLAT_TREE(LookupTree.EMPTY(),
       listArray({}), listArray({}), listArray({}), NFDuplicateTree.EMPTY());
+
+  type LookupEntry = LookupTree.Entry;
+  type LookupTable = UnorderedMap<String, LookupEntry>;
 
   uniontype ClassTree
     record PARTIAL_TREE
@@ -265,7 +270,7 @@ public
         // Make a new component node for the literal and add it to the lookup tree.
         name := l.literal;
         i := i + 1;
-        comp := InstNode.fromComponent(name, Component.newEnum(enumType, name, i), enumClass);
+        comp := InstNode.fromComponent(name, Component.newEnum(enumType, name, l.comment, i), enumClass);
         arrayUpdateNoBoundsChecking(comps, i + attr_count, comp);
         ltree := LookupTree.add(ltree, name, LookupTree.Entry.COMPONENT(i + attr_count),
           function addEnumConflict(literal = comp));
@@ -422,6 +427,7 @@ public
       Component comp;
       SCode.Element ext_def;
       Boolean is_typish;
+      InstNodeType inst_ty;
     algorithm
       // TODO: If we don't have any extends we could probably generate a flat
       // tree directly and skip a lot of this.
@@ -439,7 +445,7 @@ public
             // If the instance is an empty node, use the cloned clsNode as the instance.
             if InstNode.isEmpty(instance) then
               instance := clsNode;
-              parent_scope := InstNode.parent(clsNode);
+              parent_scope := InstNode.instanceParent(clsNode);
             else
               parent_scope := instance;
               inst_scope := scope;
@@ -461,8 +467,8 @@ public
             for i in 1:arrayLength(exts) loop
               // Update the parent of the extends to be the new instance.
               node := exts[i];
-              InstNodeType.BASE_CLASS(definition = ext_def) := InstNode.nodeType(node);
-              node := InstNode.setNodeType(InstNodeType.BASE_CLASS(instance, ext_def), node);
+              InstNodeType.BASE_CLASS(definition = ext_def, ty = inst_ty) := InstNode.nodeType(node);
+              node := InstNode.setNodeType(InstNodeType.BASE_CLASS(instance, ext_def, inst_ty), node);
               // Instantiate the class tree of the extends.
               (node, _, cls_count, comp_count) := instantiate(node, InstNode.EMPTY_NODE(), inst_scope);
               exts[i] := node;
@@ -571,6 +577,8 @@ public
                 InstNode.name(clsNode), sourceInfo());
             end if;
 
+            local_comps := listReverseInPlace(local_comps);
+
             // Create a new class tree and update the class in the node.
             cls.elements := INSTANTIATED_TREE(ltree, clss, comps, local_comps, exts, imps, dups);
           then
@@ -579,7 +587,7 @@ public
         case Class.EXPANDED_DERIVED(baseClass = node)
           algorithm
             node := InstNode.setNodeType(
-              InstNodeType.BASE_CLASS(clsNode, InstNode.definition(node)), node);
+              InstNodeType.BASE_CLASS(clsNode, InstNode.definition(node), InstNode.nodeType(node)), node);
             (node, instance, classCount, compCount) := instantiate(node, instance, scope);
             cls.baseClass := node;
           then
@@ -1403,6 +1411,19 @@ public
         tree := LookupTree.add(tree, InstNode.name(c), LookupTree.Entry.CLASS(index));
       end for;
     end appendClasses2;
+
+    function replaceClass
+      "Replaces the node for a class with another node. Assumes the class
+       already exists in the tree, and that the tree isn't instantiated."
+      input InstNode node;
+      input output ClassTree tree;
+    protected
+      Integer index;
+    algorithm
+      LookupTree.Entry.CLASS(index = index) :=
+        LookupTree.get(lookupTree(tree), InstNode.name(node));
+      arrayUpdate(getClasses(tree), index, node);
+    end replaceClass;
 
   protected
 

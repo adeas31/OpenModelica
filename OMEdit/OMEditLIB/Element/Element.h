@@ -67,7 +67,6 @@ public:
   ElementInfo(QObject *pParent = 0);
   ElementInfo(ElementInfo *pElementInfo, QObject *pParent = 0);
   void updateElementInfo(const ElementInfo *pElementInfo);
-  void parseComponentInfoString(QString value);
   void parseElementInfoString(QString value);
   void fetchParameterValue(OMCProxy *pOMCProxy, const QString &className);
   void applyDefaultPrefixes(QString defaultPrefixes);
@@ -195,6 +194,11 @@ public:
     Extend,  /* Inherited Element. */
     Port  /* Port Element. */
   };
+
+  Element(ModelInstance::Component *pModelComponent, bool inherited, GraphicsView *pGraphicsView, bool createTransformation, QPointF position, const QString &placementAnnotation);
+  Element(ModelInstance::Model *pModel, Element *pParentElement);
+  Element(ModelInstance::Component *pModelComponent, Element *pParentElement, Element *pRootParentElement);
+
   Element(QString name, LibraryTreeItem *pLibraryTreeItem, QString annotation, QPointF position, ElementInfo *pElementInfo, GraphicsView *pGraphicsView);
   Element(LibraryTreeItem *pLibraryTreeItem, Element *pParentElement);
   Element(Element *pElement, Element *pParentElement, Element *pRootParentElement);
@@ -202,25 +206,36 @@ public:
   // used for interface point
   Element(ElementInfo *pElementInfo, Element *pParentElement);
   bool isInheritedElement() {return mIsInheritedElement;}
-  bool isInheritedComponent() {return isInheritedElement();}
   bool hasShapeAnnotation(Element *pElement);
   bool hasNonExistingClass();
   QRectF boundingRect() const override;
   QRectF itemsBoundingRect();
   void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget = 0) override;
+  ModelInstance::Model *getModel() const {return mpModel;}
+  ModelInstance::Component *getModelComponent() const {return mpModelComponent;}
+  void setModelComponent(ModelInstance::Component *pModelComponent) {mpModelComponent = pModelComponent;}
   LibraryTreeItem* getLibraryTreeItem() {return mpLibraryTreeItem;}
-  QString getName() {return mpElementInfo->getName();}
+  QString getName() const;
+  QString getClassName() const;
+  QString getComment() const;
+  bool isCondition() const;
   GraphicsView* getGraphicsView() {return mpGraphicsView;}
-  Element *getReferenceComponent() {return mpReferenceComponent;}
-  Element* getParentComponent() {return mpParentComponent;}
-  Element* getRootParentComponent();
+  Element *getReferenceElement() {return mpReferenceElement;}
+  Element* getParentElement() {return mpParentElement;}
+  Element* getRootParentElement();
   ElementType getElementType() {return mElementType;}
   QString getTransformationString() {return mTransformationString;}
   void setDialogAnnotation(QStringList dialogAnnotation) {mDialogAnnotation = dialogAnnotation;}
   QStringList getDialogAnnotation() {return mDialogAnnotation;}
   void setChoicesAnnotation(QStringList choicesAnnotation) {mChoicesAnnotation = choicesAnnotation;}
   QStringList getChoicesAnnotation() {return mChoicesAnnotation;}
+  void setChoicesAllMatchingAnnotation(QStringList choicesAllMatching) {mChoicesAllMatchingAnnotation = choicesAllMatching;}
+  QStringList getChoicesAllMatchingAnnotation() {return mChoicesAllMatchingAnnotation;}
+  void setChoices(QStringList choices) {mChoices = choices;}
+  QStringList getChoices() {return mChoices;}
+  bool hasChoices() {return (mChoices.size() > 0);}
   CoOrdinateSystem getCoOrdinateSystem() const;
+  ModelInstance::CoordinateSystem getCoOrdinateSystemNew() const;
   OriginItem* getOriginItem() {return mpOriginItem;}
   QAction* getParametersAction() {return mpParametersAction;}
   QAction* getFetchInterfaceDataAction() {return mpFetchInterfaceDataAction;}
@@ -228,12 +243,11 @@ public:
   QAction* getOpenClassAction() {return mpOpenClassAction;}
   QAction* getSubModelAttributesAction() {return mpSubModelAttributesAction;}
   QAction* getElementPropertiesAction() {return mpElementPropertiesAction;}
+  QAction* getReplaceSubModelAction() {return mpReplaceSubModelAction;}
   ElementInfo* getElementInfo() {return mpElementInfo;}
-  ElementInfo* getComponentInfo() {return mpElementInfo;}
   QList<ShapeAnnotation*> getShapesList() {return mShapesList;}
   QList<Element*> getInheritedElementsList() {return mInheritedElementsList;}
   QList<Element*> getElementsList() {return mElementsList;}
-  QList<Element*> getComponentsList() {return mElementsList;}
   void setOldScenePosition(QPointF oldScenePosition) {mOldScenePosition = oldScenePosition;}
   QPointF getOldScenePosition() {return mOldScenePosition;}
   void setOldPosition(QPointF oldPosition) {mOldPosition = oldPosition;}
@@ -247,8 +261,12 @@ public:
   QString getTransformationExtent();
   bool isExpandableConnector() const;
   bool isArray() const;
+  QStringList getAbsynArrayIndexes() const;
+  QStringList getTypedArrayIndexes() const;
   int getArrayIndexAsNumber(bool *ok = 0) const;
   bool isConnectorSizing();
+  bool isParameterConnectorSizing(const QString &parameter);
+  static bool isParameterConnectorSizing(ModelInstance::Model *pModel, QString parameter);
   static bool isParameterConnectorSizing(Element *pElement, QString parameter);
   void createClassElements();
   void applyRotation(qreal angle);
@@ -261,6 +279,8 @@ public:
   void setActiveState(bool activeState) {mActiveState = activeState;}
   bool isActiveState() {return mActiveState;}
   void removeChildren();
+  void removeChildrenNew();
+  void reDrawElementNew();
   void emitAdded();
   void emitTransformChange(bool positionChanged) {emit transformChange(positionChanged);}
   void emitTransformHasChanged();
@@ -283,13 +303,18 @@ public:
   bool isInBus() {return mpBusComponent != 0;}
   void setBusComponent(Element *pBusComponent);
   Element* getBusComponent() {return mpBusComponent;}
-  Element* getElementByName(const QString &componentName);
+  Element* getElementByName(const QString &elementName);
+  static ModelInstance::Component *getModelComponentByName(ModelInstance::Model *pModel, const QString &name);
 
   Transformation mTransformation;
   Transformation mOldTransformation;
 private:
-  Element *mpReferenceComponent;
-  Element *mpParentComponent;
+  ModelInstance::Component *mpModelComponent = nullptr;
+  ModelInstance::Model *mpModel = nullptr;
+  QString mName;
+  QString mClassName;
+  Element *mpReferenceElement;
+  Element *mpParentElement;
   LibraryTreeItem *mpLibraryTreeItem;
   ElementInfo *mpElementInfo;
   GraphicsView *mpGraphicsView;
@@ -298,6 +323,8 @@ private:
   QString mTransformationString;
   QStringList mDialogAnnotation;
   QStringList mChoicesAnnotation;
+  QStringList mChoicesAllMatchingAnnotation;
+  QStringList mChoices;
   QString mParameterValue;
   LineAnnotation *mpNonExistingElementLine;
   RectangleAnnotation *mpDefaultElementRectangle;
@@ -309,6 +336,7 @@ private:
   QAction *mpOpenClassAction;
   QAction *mpSubModelAttributesAction;
   QAction *mpElementPropertiesAction;
+  QAction *mpReplaceSubModelAction;
   ResizerItem *mpBottomLeftResizerItem;
   ResizerItem *mpTopLeftResizerItem;
   ResizerItem *mpTopRightResizerItem;
@@ -348,11 +376,11 @@ private:
   void showResizerItems();
   void hideResizerItems();
   void getScale(qreal *sx, qreal *sy);
-  void setOriginAndExtents();
   void updateConnections();
   QString getParameterDisplayStringFromExtendsModifiers(QString parameterName);
   QString getParameterDisplayStringFromExtendsParameters(QString parameterName, QString modifierString);
-  bool checkEnumerationDisplayString(QString &displayString, const QString &typeName);
+  static QString getParameterDisplayStringFromExtendsParameters(ModelInstance::Model *pModel, QString parameterName, QString modifierString);
+  static bool checkEnumerationDisplayString(QString &displayString, const QString &typeName);
   void updateToolTip();
   bool canUseDiagramAnnotation();
 signals:
@@ -407,7 +435,9 @@ public slots:
   void openClass();
   void showSubModelAttributes();
   void showElementPropertiesDialog();
+  void showReplaceSubModelDialog();
   void updateDynamicSelect(double time);
+  void resetDynamicSelect();
 protected:
   virtual QVariant itemChange(GraphicsItemChange change, const QVariant &value) override;
 };

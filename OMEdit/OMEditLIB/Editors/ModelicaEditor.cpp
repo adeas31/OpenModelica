@@ -438,6 +438,10 @@ bool ModelicaEditor::validateText(LibraryTreeItem **pLibraryTreeItem)
       mLastValidText = mpPlainTextEdit->toPlainText();
     }
   }
+  /* Update the Libraries Browser when Modelica text change is done
+   * See discussion #10728
+   */
+  MainWindow::instance()->getLibraryWidget()->getLibraryTreeModel()->showHideProtectedClasses();
   return true;
 }
 
@@ -576,9 +580,7 @@ void ModelicaEditor::contentsHasChanged(int position, int charsRemoved, int char
     } else {
       /* if user is changing, the normal class. */
       if (!mForceSetPlainText) {
-        mpModelWidget->setWindowTitle(QString(mpModelWidget->getLibraryTreeItem()->getName()).append("*"));
-        mpModelWidget->getLibraryTreeItem()->setIsSaved(false);
-        MainWindow::instance()->getLibraryWidget()->getLibraryTreeModel()->updateLibraryTreeItem(mpModelWidget->getLibraryTreeItem());
+        contentsChanged();
         setTextChanged(true);
       }
       /* Keep the line numbers and the block information for the line breakpoints updated */

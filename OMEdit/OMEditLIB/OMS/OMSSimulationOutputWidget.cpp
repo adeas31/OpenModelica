@@ -31,6 +31,7 @@
  * @author Adeel Asghar <adeel.asghar@liu.se>
  */
 
+#include "zmq.h"
 #include "OMSSimulationOutputWidget.h"
 #include "Util/Helper.h"
 #include "MainWindow.h"
@@ -41,7 +42,6 @@
 #include "Options/OptionsDialog.h"
 #include "Simulation/ArchivedSimulationsWidget.h"
 #include "Util/OutputPlainTextEdit.h"
-#include "zmq.h"
 
 #include <QGridLayout>
 
@@ -300,7 +300,7 @@ OMSSimulationOutputWidget::OMSSimulationOutputWidget(const QString &cref, const 
     }
     // start the executable
     QString process;
-#ifdef WIN32
+#if defined(_WIN32)
     process = QString("python");
     QProcessEnvironment processEnvironment = QProcessEnvironment::systemEnvironment();
     QString OMHOME = QString(Helper::OpenModelicaHome);
@@ -448,7 +448,7 @@ void OMSSimulationOutputWidget::simulationProcessError(QProcess::ProcessError er
 void OMSSimulationOutputWidget::writeSimulationOutput(const QString &output, StringHandler::SimulationMessageType type)
 {
   QTextCharFormat textCharFormat;
-  textCharFormat.setForeground(StringHandler::getSimulationMessageTypeColor(type));
+  textCharFormat.setForeground(OptionsDialog::instance()->getMessagesPage()->getColor(type));
   mpSimulationOutputPlainTextEdit->appendOutput(output, textCharFormat);
 }
 

@@ -34,6 +34,7 @@ extern "C" {
 
 #include "omc_msvc.h"
 #include "omc_error.h"
+#include "omc_file.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -64,7 +65,7 @@ int vasprintf(char **strp, const char *fmt, va_list ap) {
 
 #if !defined(OMC_MINIMAL_RUNTIME)
 
-#include <windows.h>
+#include <winsock2.h>
 #include <tlhelp32.h>
 #include <time.h>
 
@@ -226,7 +227,7 @@ void* omc_dlopen(const char *filename, int flag)
   return (void*) LoadLibrary(filename);
 }
 
-#include <windows.h>
+#include <winsock2.h>
 #include <imagehlp.h>
 
 static const char* GetLastErrorAsString()
@@ -272,6 +273,27 @@ int omc_dlclose(void *handle)
   return FreeLibrary(handle);
 }
 
+void* dlopen(const char *filename, int flag) {
+  return omc_dlopen(filename, flag);
+}
+
+char* dlerror() {
+  return omc_dlerror();
+}
+
+void* dlsym(void *handle, const char *symbol) {
+  return omc_dlsym(handle, symbol);
+}
+
+int dlclose(void *handle) {
+  return omc_dlclose(handle);
+}
+
+int dladdr(void *addr, Dl_info *info) {
+  return omc_dladdr(addr, info);
+}
+
+
 
 #if defined(_MSC_VER)
 /* no dladdr on MSVC */
@@ -291,7 +313,7 @@ int omc_dladdr(void *addr, Dl_info *info)
 {
   HANDLE hProcess;
   DWORD dwModuleBase;
-  DWORD displacement;
+  DWORD64 displacement;
   char sModuleName[MAX_PATH + 1];
   sModuleName[MAX_PATH] = '\0';
 
@@ -353,8 +375,7 @@ char *realpath(const char *path, char resolved_path[PATH_MAX])
 {
   if (!_fullpath(resolved_path, path, PATH_MAX))
   {
-    FILE_INFO info = omc_dummyFileInfo;
-    omc_assert_warning(info, "System.realpath failed on %s with errno: %d", path, errno);
+    omc_assert_warning(omc_dummyFileInfo, "System.realpath failed on %s with errno: %d", path, errno);
     resolved_path = (char*)path;
   }
   return resolved_path;
@@ -368,7 +389,7 @@ This file has no copyright assigned and is placed in the Public Domain.
 Written by Nach M. S. September 8, 2005
 */
 
-#include <windows.h>
+#include <winsock2.h>
 #include <stdlib.h>
 #include <limits.h>
 #include <errno.h>
@@ -468,10 +489,10 @@ char *realpath(const char *path, char resolved_path[PATH_MAX])
       //If we get to here with a valid return_path, we're still doing good
       if (return_path)
       {
-        struct stat stat_buffer;
+        omc_stat_t stat_buffer;
 
-        //Make sure path exists, stat() returns 0 on success
-        if (stat(return_path, &stat_buffer))
+        //Make sure path exists, omc_stat() returns 0 on success
+        if (omc_stat(return_path, &stat_buffer))
         {
           if (return_path != resolved_path)
           {
@@ -479,7 +500,7 @@ char *realpath(const char *path, char resolved_path[PATH_MAX])
           }
 
           return_path = 0;
-          //stat() will set the correct errno for us
+          //omc_stat() will set the correct errno for us
         }
         //else we succeeded!
       }
@@ -496,8 +517,7 @@ char *realpath(const char *path, char resolved_path[PATH_MAX])
 
   if (return_path == NULL)
   {
-    FILE_INFO info = omc_dummyFileInfo;
-    omc_assert_warning(info, "System.realpath failed on %s with errno: %d", path, errno);
+    omc_assert_warning(omc_dummyFileInfo, "System.realpath failed on %s with errno: %d", path, errno);
     resolved_path = (char*)path;
     return_path = (char*)path;
   }

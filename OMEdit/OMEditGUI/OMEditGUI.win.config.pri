@@ -48,8 +48,10 @@ CONFIG(release, debug|release) { # release
   # win32 vs. win64
   contains(QT_ARCH, i386) { # 32-bit
     LIBS += -L$$(OMDEV)/tools/msys/mingw32/lib/binutils -L$$(OMDEV)/tools/msys/mingw32/bin
+    INCLUDEPATH += $$(OMDEV)/tools/msys/mingw32/include/binutils
   } else { # 64-bit
     LIBS += -L$$(OMDEV)/tools/msys/mingw64/lib/binutils -L$$(OMDEV)/tools/msys/mingw64/bin
+    INCLUDEPATH += $$(OMDEV)/tools/msys/mingw64/include/binutils
   }
   LIBS += -limagehlp -lbfd -lintl -liberty -llibosg.dll -llibosgViewer.dll -llibOpenThreads.dll -llibosgDB.dll -llibosgGA.dll
 } else { # debug
@@ -58,10 +60,10 @@ CONFIG(release, debug|release) { # release
   } else { # 64-bit
     LIBS += -L$$(OMDEV)/tools/msys/mingw64/bin
   }
-  LIBS += -llibosgd.dll -llibosgViewerd.dll -llibOpenThreadsd.dll -llibosgDBd.dll -llibosgGAd.dll
+  LIBS += -llibosg.dll -llibosgViewer.dll -llibOpenThreads.dll -llibosgDB.dll -llibosgGA.dll
 }
-LIBS += -L$$OMEDIT_ROOT/OMEditLIB/Debugger/Parser -lGDBMIParser \
-  -L$$(OMBUILDDIR)/lib/omc -lomcparserantlr4 -lomantlr3 -lOMPlot -lomqwt -lomopcua -lzmq \
-  -lOpenModelicaCompiler -lomcruntime -lOpenModelicaRuntimeC -lfmilib -lzlib -lModelicaExternalC -lomcgc -lpthread -lshlwapi \
+LIBS += -L$$(OMBUILDDIR)/../OMEdit/OMEditLIB/Debugger/Parser -lGDBMIParser \
+  -L$$(OMBUILDDIR)/lib/omc -L$$(OMBUILDDIR)/../OMParser/install/lib -Wl,-Bstatic -lOMParser -lantlr4-runtime -Wl,-Bdynamic -lomantlr3 -lOMPlot -lomqwt -lomopcua -lzmq \
+  -lOpenModelicaCompiler -lomcruntime -lOpenModelicaRuntimeC -lfmilib -lzlib -lomcgc -lpthread -lshlwapi \
   -lws2_32 \
   -L$$(OMBUILDDIR)/bin -lOMSimulator

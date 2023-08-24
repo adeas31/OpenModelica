@@ -29,12 +29,12 @@ endif
 UTIL_OBJS_MINIMAL=$(UTIL_OBJS_NO_FMI) \
                   base_array$(OBJ_EXT) \
                   boolean_array$(OBJ_EXT) \
+                  context$(OBJ_EXT) \
                   division$(OBJ_EXT) \
                   doubleEndedList$(OBJ_EXT) \
                   generic_array$(OBJ_EXT) \
                   index_spec$(OBJ_EXT) \
                   integer_array$(OBJ_EXT) \
-                  jacobian_util$(OBJ_EXT) \
                   list$(OBJ_EXT) \
                   modelica_string_lit$(OBJ_EXT) \
                   modelica_string$(OBJ_EXT) \
@@ -56,6 +56,7 @@ UTIL_OBJS_MINIMAL=$(UTIL_OBJS_NO_FMI) \
 
 UTIL_HFILES_MINIMAL=base_array.h \
                     boolean_array.h \
+                    context.h \
                     division.h \
                     doubleEndedList.h \
                     generic_array.h \
@@ -156,6 +157,15 @@ ifeq ($(OMC_MINIMAL_RUNTIME),)
               cvode_solver$(OBJ_EXT) \
               dae_mode$(OBJ_EXT) \
               dassl$(OBJ_EXT) \
+              gbode_conf$(OBJ_EXT) \
+              gbode_ctrl$(OBJ_EXT) \
+              gbode_events$(OBJ_EXT) \
+              gbode_main$(OBJ_EXT) \
+              gbode_nls$(OBJ_EXT) \
+              gbode_sparse$(OBJ_EXT) \
+              gbode_step$(OBJ_EXT) \
+              gbode_tableau$(OBJ_EXT) \
+              gbode_util$(OBJ_EXT) \
               ida_solver$(OBJ_EXT) \
               irksco$(OBJ_EXT) \
               jacobianSymbolical$(OBJ_EXT) \
@@ -163,10 +173,12 @@ ifeq ($(OMC_MINIMAL_RUNTIME),)
               linearSolverKlu$(OBJ_EXT) \
               linearSolverLis$(OBJ_EXT) \
               linearSolverUmfpack$(OBJ_EXT) \
+              newton_diagnostics$(OBJ_EXT) \
               newtonIteration$(OBJ_EXT) \
               nonlinearSolverNewton$(OBJ_EXT) \
               radau$(OBJ_EXT) \
               sundials_error$(OBJ_EXT) \
+              sundials_util$(OBJ_EXT) \
               sym_solver_ssc$(OBJ_EXT)
 else
   SOLVER_OBJS=$(SOLVER_OBJS_MINIMAL)
@@ -191,6 +203,7 @@ SOLVER_HFILES = cvode_solver.h \
                 spatialDistribution.h \
                 stateset.h \
                 sundials_error.h \
+                sundials_util.h \
                 sym_solver_ssc.h
 
 INITIALIZATION_OBJS = initialization$(OBJ_EXT)
@@ -249,6 +262,7 @@ else
   SIM_OBJS_C_FMI=
 endif
 SIM_OBJS_C = $(SIM_OBJS_C_FMI) \
+             jacobian_util$(OBJ_EXT) \
              omc_simulation_util$(OBJ_EXT) \
              options$(OBJ_EXT) \
              simulation_info_json$(OBJ_EXT) \
@@ -259,9 +273,11 @@ SIM_HFILES = ../dataReconciliation/dataReconciliation.h \
              omc_simulation_util.h \
              simulation_info_json.h \
              simulation_input_xml.h \
+             simulation_omc_assert.h \
              simulation_runtime.h \
              socket.h \
-             options.h
+             options.h \
+             jacobian_util.h
 
 FMIPATH = ./fmi/
 FMI_OBJS = FMICommon$(OBJ_EXT) FMI1Common$(OBJ_EXT) FMI1ModelExchange$(OBJ_EXT) FMI1CoSimulation$(OBJ_EXT) FMI2Common$(OBJ_EXT) FMI2ModelExchange$(OBJ_EXT)
@@ -271,7 +287,7 @@ GCPATH = ./gc/
 GCOBJSPATH = $(GC_OBJS:%=$(BUILDPATH)/$(GCPATH)%)
 GCHFILESPATH = $(GC_HFILES:%=$(GCPATH)%)
 GCHFILESPATH_MINIMAL = $(GC_HFILES_MINIMAL:%=$(GCPATH)%)
-GCOBJSPATH_MINIMAL = $(GC_OBJS_MINIMAL:%=$(GCPATH)%)
+GCOBJSPATH_MINIMAL = $(GC_OBJS_MINIMAL:%=$(BUILDPATH)/$(GCPATH)%)
 
 
 METAPATH = ./meta/

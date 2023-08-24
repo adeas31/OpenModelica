@@ -244,7 +244,7 @@ template variableCategoryXml(VarKind varKind)
   case CONST(__)        then "independentConstant"
   case EXTOBJ(__)       then 'externalObject_<%dotPathXml(fullClassName)%>'
   case JAC_VAR(__)      then "jacobianVar"
-  case JAC_DIFF_VAR(__) then "jacobianDiffVar"
+  case JAC_TMP_VAR(__) then "jacobianTmpVar"
   else error(sourceInfo(), "Unexpected simVarTypeName varKind")
 end variableCategoryXml;
 
@@ -264,7 +264,7 @@ template ScalarVariableTypeCommonAttributeXml(Option<DAE.Exp> initialValue, Bool
  "Generates XML code for ScalarVariable Type file ."
 ::=
 match initialValue
-  case SOME(exp) then 'start="<%initValXml(exp)%>" fixed="<%isFixed%>"'
+  case SOME(exp) then if boolOr(Expression.isEvaluatedConst(exp), Expression.isCref(exp)) then 'start="<%initValXml(exp)%>" fixed="<%isFixed%>"' else ''
 end ScalarVariableTypeCommonAttributeXml;
 
 template ScalarVariableTypeMinAttribute(Option<DAE.Exp> minValue)

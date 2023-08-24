@@ -32,7 +32,7 @@
  */
 
 #include "GDBBacktrace.h"
-#ifdef WIN32
+#if defined(_WIN32)
 #include <windows.h>
 #else
 #include <unistd.h>
@@ -54,9 +54,8 @@
 GDBBacktrace::GDBBacktrace(QObject *parent)
   : QObject(parent)
 {
-  QString program = QLatin1String("gdb");
-#ifdef WIN32
-  program = Utilities::getGDBPath();
+  QString program = Utilities::getGDBPath();
+#if defined(_WIN32)
   const qint64 processId = GetCurrentProcessId();
 #else
   const qint64 processId = getpid();

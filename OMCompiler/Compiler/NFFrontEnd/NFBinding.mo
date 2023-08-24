@@ -46,7 +46,7 @@ protected
   import Error;
 
 public
-  constant Binding EMPTY_BINDING = UNBOUND(false, AbsynUtil.dummyInfo);
+  constant Binding EMPTY_BINDING = UNBOUND();
 
   type EachType = enumeration(
     NOT_EACH,
@@ -67,12 +67,6 @@ public
   );
 
   record UNBOUND
-    // NOTE: Use the EMPTY_BINDING constant above when a default unbound binding
-    //       is needed, to save memory. UNBOUND contains this information to be
-    //       able to check that 'each' is used correctly, so info is only needed
-    //       when isEach is true.
-    Boolean isEach;
-    SourceInfo info;
   end UNBOUND;
 
   record RAW_BINDING
@@ -122,6 +116,8 @@ public
     list<ErrorTypes.TotalMessage> errors;
   end INVALID_BINDING;
 
+  record WILD end WILD;
+
 public
   function fromAbsyn
     input Option<Absyn.Exp> bindingExp;
@@ -144,7 +140,7 @@ public
         then
           RAW_BINDING(exp, scope, {}, each_ty, source, info);
 
-      else if eachPrefix then UNBOUND(true, info) else EMPTY_BINDING;
+      else EMPTY_BINDING;
     end match;
   end fromAbsyn;
 
@@ -154,6 +150,7 @@ public
   algorithm
     isBound := match binding
       case UNBOUND() then false;
+      case INVALID_BINDING() then false;
       else true;
     end match;
   end isBound;
@@ -165,6 +162,7 @@ public
     isBound := match binding
       case UNBOUND() then false;
       case CEVAL_BINDING() then false;
+      case INVALID_BINDING() then false;
       else true;
     end match;
   end isExplicitlyBound;
@@ -178,6 +176,16 @@ public
       else false;
     end match;
   end isUnbound;
+
+  function isInvalid
+    input Binding binding;
+    output Boolean isInvalid;
+  algorithm
+    isInvalid := match binding
+      case INVALID_BINDING() then true;
+      else false;
+    end match;
+  end isInvalid;
 
   function untypedExp
     input Binding binding;
@@ -381,7 +389,6 @@ public
     output SourceInfo info;
   algorithm
     info := match binding
-      case UNBOUND() then binding.info;
       case RAW_BINDING() then binding.info;
       case UNTYPED_BINDING() then binding.info;
       case TYPED_BINDING() then binding.info;
@@ -409,7 +416,6 @@ public
     output Boolean isEach;
   algorithm
     isEach := match binding
-      case UNBOUND() then binding.isEach;
       case RAW_BINDING() then binding.eachType == EachType.EACH;
       case UNTYPED_BINDING() then binding.eachType == EachType.EACH;
       case TYPED_BINDING() then binding.eachType == EachType.EACH;
@@ -423,6 +429,7 @@ public
   algorithm
     isTyped := match binding
       case TYPED_BINDING() then true;
+      case FLAT_BINDING() then true;
       else false;
     end match;
   end isTyped;
@@ -458,6 +465,21 @@ public
       case INVALID_BINDING() then toFlatString(binding.binding, prefix);
     end match;
   end toFlatString;
+
+  function toDebugString
+    input Binding binding;
+    output String string;
+  algorithm
+    string := match binding
+      case UNBOUND() then "UNBOUND";
+      case RAW_BINDING() then "RAW_BINDING";
+      case UNTYPED_BINDING() then "UNTYPED_BINDING";
+      case TYPED_BINDING() then "TYPED_BINDING";
+      case FLAT_BINDING() then "FLAT_BINDING";
+      case CEVAL_BINDING() then "CEVAL_BINDING";
+      case INVALID_BINDING() then "INVALID_BINDING";
+    end match;
+  end toDebugString;
 
   function isEqual
     input Binding binding1;
@@ -681,6 +703,57 @@ public
     end match;
   end containsExp;
 
+  function update
+    input output Binding binding;
+    input Expression exp;
+  algorithm
+    binding := match binding
+
+      case UNBOUND()
+      then TYPED_BINDING(
+          bindingExp  = exp,
+          bindingType = Expression.typeOf(exp),
+          variability = Expression.variability(exp),
+          eachType    = EachType.NOT_EACH,
+          evalState   = if Expression.isConstNumber(exp)
+                        then Mutable.create(EvalState.EVALUATED)
+                        else Mutable.create(EvalState.NOT_EVALUATED),
+          isFlattened = true,
+          source      = Source.BINDING,
+          info        = sourceInfo()
+        );
+
+      case UNTYPED_BINDING() algorithm
+        binding.bindingExp := exp;
+      then binding;
+
+      case TYPED_BINDING() algorithm
+        binding.bindingExp := exp;
+      then binding;
+
+      case FLAT_BINDING() algorithm
+        binding.bindingExp := exp;
+      then binding;
+
+      case CEVAL_BINDING() algorithm
+        binding.bindingExp := exp;
+      then binding;
+
+      case INVALID_BINDING() algorithm
+        binding.binding := update(binding.binding, exp);
+      then binding;
+
+      case RAW_BINDING() algorithm
+        Error.addMessage(Error.INTERNAL_ERROR,{getInstanceName() + " failed because a raw binding cannot be updated."});
+      then fail();
+
+      else algorithm
+        Error.addMessage(Error.INTERNAL_ERROR,{getInstanceName() + " failed."});
+      then fail();
+
+    end match;
+  end update;
+
   function setAttr
     "sets a specific attribute value and adds it if it does not exist"
     input output list<tuple<String, Binding>> ty_attr;
@@ -748,6 +821,18 @@ public
   algorithm
     binding := FLAT_BINDING(exp, var, source);
   end makeFlat;
+
+  function isEvaluated
+    input Binding binding;
+    output Boolean evaluated;
+  algorithm
+    evaluated := match binding
+      case TYPED_BINDING()
+        then Mutable.access(binding.evalState) == EvalState.EVALUATED;
+      case CEVAL_BINDING() then true;
+      else false;
+    end match;
+  end isEvaluated;
 
 annotation(__OpenModelica_Interface="frontend");
 end NFBinding;

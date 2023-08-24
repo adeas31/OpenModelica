@@ -31,9 +31,12 @@
  *
  */
 
+#include <iostream>
+#include <memory>
+
 #include <QtSvg/QSvgGenerator>
 #include "PlotWindow.h"
-#include "iostream"
+#include "LinearScaleEngine.h"
 #include "qwt_plot_layout.h"
 #if QWT_VERSION >= 0x060000
 #include "qwt_plot_renderer.h"
@@ -128,7 +131,7 @@ void PlotWindow::initializePlot(QStringList arguments)
     throw PlotException("Invalid input" + arguments[17]);
   }
   setTimeUnit("");
-  setPrefixUnits(false);
+  setPrefixUnits(true);
   setCanUseXPrefixUnits(false);
   setCanUseYPrefixUnits(false);
   /* read variables */
@@ -381,7 +384,7 @@ void PlotWindow::setupToolbar()
 void PlotWindow::plot(PlotCurve *pPlotCurve)
 {
   QString currentLine;
-  if (mVariablesList.isEmpty() and getPlotType() == PlotWindow::PLOT)
+  if (mVariablesList.isEmpty() && getPlotType() == PlotWindow::PLOT)
     throw NoVariableException(QString("No variables specified!").toStdString().c_str());
 
   bool editCase = pPlotCurve ? true : false;
@@ -412,7 +415,7 @@ void PlotWindow::plot(PlotCurve *pPlotCurve)
       if (currentLine.contains("DataSet:"))
       {
         currentVariable = currentLine.remove("DataSet: ");
-        if (mVariablesList.contains(currentVariable) or getPlotType() == PlotWindow::PLOTALL)
+        if (mVariablesList.contains(currentVariable) || getPlotType() == PlotWindow::PLOTALL)
         {
           variablesPlotted.append(currentVariable);
           if (!editCase) {
@@ -474,7 +477,7 @@ void PlotWindow::plot(PlotCurve *pPlotCurve)
     // read in all values
     for (int i = 0; i < csvReader->numvars; i++)
     {
-      if (mVariablesList.contains(csvReader->variables[i]) or getPlotType() == PlotWindow::PLOTALL)
+      if (mVariablesList.contains(csvReader->variables[i]) || getPlotType() == PlotWindow::PLOTALL)
       {
         variablesPlotted.append(csvReader->variables[i]);
         double *vals = read_csv_dataset(csvReader, csvReader->variables[i]);
@@ -520,13 +523,15 @@ void PlotWindow::plot(PlotCurve *pPlotCurve)
     if(0 != (msg = omc_new_matlab4_reader(mFile.fileName().toStdString().c_str(), &reader))) {
       throw PlotException(msg);
     }
-    //Read in timevector
-    double startTime = omc_matlab4_startTime(&reader);
-    double stopTime =  omc_matlab4_stopTime(&reader);
+
     if (reader.nvar < 1) {
       omc_free_matlab4_reader(&reader);
       throw NoVariableException("Variable doesnt exist: time");
     }
+
+    double startTime = omc_matlab4_startTime(&reader);
+    double stopTime =  omc_matlab4_stopTime(&reader);
+    //Read in timevector
     double *timeVals = omc_matlab4_read_vals(&reader,1);
     if (!timeVals) {
       omc_free_matlab4_reader(&reader);
@@ -534,7 +539,7 @@ void PlotWindow::plot(PlotCurve *pPlotCurve)
     }
     // read in all values
     for (int i = 0; i < reader.nall; i++) {
-      if (mVariablesList.contains(reader.allInfo[i].name) or getPlotType() == PlotWindow::PLOTALL) {
+      if (mVariablesList.contains(reader.allInfo[i].name) || getPlotType() == PlotWindow::PLOTALL) {
         variablesPlotted.append(reader.allInfo[i].name);
         // create the plot curve for variable
         if (!editCase) {
@@ -871,7 +876,7 @@ int readPLTDataset(QTextStream *mpTextStream, QString variable, int N, double* v
 
 void readPLTArray(QTextStream *mpTextStream, QString variable, double alpha, int intervalSize, int it, QList<double> &arrLstOut){
   int index = 1;
-  double vals[intervalSize];
+  auto vals = std::make_unique<double[]>(intervalSize);
   do  //loop over all indexes
   {
     //read the values
@@ -882,7 +887,7 @@ void readPLTArray(QTextStream *mpTextStream, QString variable, double alpha, int
     } else {
       variableWithInd.append("["+QString::number(index)+"]");
     }
-    if (readPLTDataset(mpTextStream, variableWithInd, intervalSize, vals)){
+    if (readPLTDataset(mpTextStream, variableWithInd, intervalSize, vals.get())){
       if (index == 1)
         throw NoVariableException(QObject::tr("Array variable doesnt exist: %1").arg(variable).toStdString().c_str());
       else
@@ -897,7 +902,8 @@ void readPLTArray(QTextStream *mpTextStream, QString variable, double alpha, int
   return;
 }
 
-double getTimeUnitFactor(QString timeUnit){
+double getTimeUnitFactor(QString timeUnit)
+{
   if (timeUnit == "ms") return 1000.0;
   else if (timeUnit == "s") return 1.0;
   else if (timeUnit == "min") return 1.0/6.0;
@@ -906,8 +912,9 @@ double getTimeUnitFactor(QString timeUnit){
   else throw PlotException(QObject::tr("Unknown unit in plotArray(Parametric)."));
 }
 
-void PlotWindow::updateTimeText(QString unit)
+void PlotWindow::updateTimeText()
 {
+  QString unit = getTimeUnit();
   double timeUnitFactor = getTimeUnitFactor(unit);
   mpPlot->setFooter(QString("t = %1 " + unit).arg(getTime()*timeUnitFactor,0,'g',3));
   mpPlot->replot();
@@ -918,8 +925,7 @@ void PlotWindow::plotArray(double time, PlotCurve *pPlotCurve)
   double *res;
   QString currentLine;
   setTime(time);
-  double timeUnitFactor = getTimeUnitFactor(getTimeUnit());
-  if (mVariablesList.isEmpty() and getPlotType() == PlotWindow::PLOTARRAY)
+  if (mVariablesList.isEmpty() && getPlotType() == PlotWindow::PLOTARRAY)
     throw NoVariableException(QString("No variables specified!").toStdString().c_str());
   bool editCase = pPlotCurve ? true : false;
   //PLOT PLT
@@ -947,11 +953,11 @@ void PlotWindow::plotArray(double time, PlotCurve *pPlotCurve)
     }
     //    double vals[intervalSize];
     //Read in timevector
-    double timeVals[intervalSize];
-    readPLTDataset(mpTextStream, "time", intervalSize, timeVals);
+    auto timeVals = std::make_unique<double[]>(intervalSize);
+    readPLTDataset(mpTextStream, "time", intervalSize, timeVals.get());
     //Find indexes and alpha to interpolate data in particular time
     double alpha;
-    int it = setupInterp(timeVals, time, intervalSize, alpha);
+    int it = setupInterp(timeVals.get(), time, intervalSize, alpha);
     if (it < 0) {
       mFile.close();
       throw PlotException("Time out of bounds.");
@@ -974,13 +980,12 @@ void PlotWindow::plotArray(double time, PlotCurve *pPlotCurve)
       readPLTArray(mpTextStream, currentVariable, alpha, intervalSize, it, arrLst);
       for (int i = 0; i < arrLst.length(); i++)
       {
-        pPlotCurve->addXAxisValue(i);
+        pPlotCurve->addXAxisValue(i+1);
         pPlotCurve->addYAxisValue(arrLst[i]);
       }
       pPlotCurve->setData(pPlotCurve->getXAxisVector(), pPlotCurve->getYAxisVector(), pPlotCurve->getSize());
       pPlotCurve->attach(mpPlot);
-      mpPlot->setFooter(QString("t = %1 " + getTimeUnit()).arg(time*timeUnitFactor,0,'g',3));
-      mpPlot->replot();
+      updateTimeText();
     }
     mFile.close();
   }
@@ -1034,14 +1039,12 @@ void PlotWindow::plotArray(double time, PlotCurve *pPlotCurve)
       pPlotCurve->clearXAxisVector();
       pPlotCurve->clearYAxisVector();
       for (int j = 0; j < res.count(); j++){
-        pPlotCurve->addXAxisValue(j);
+        pPlotCurve->addXAxisValue(j+1);
         pPlotCurve->addYAxisValue(res[j]);
       }
       pPlotCurve->setData(pPlotCurve->getXAxisVector(), pPlotCurve->getYAxisVector(), pPlotCurve->getSize());
       pPlotCurve->attach(mpPlot);
-      mpPlot->setFooter(QString("t = %1 " + getTimeUnit()).arg(time*timeUnitFactor,0,'g',3));
-      mpPlot->replot();
-
+      updateTimeText();
     }
     omc_free_csv_reader(csvReader);
   }
@@ -1095,13 +1098,12 @@ void PlotWindow::plotArray(double time, PlotCurve *pPlotCurve)
         pPlotCurve->clearXAxisVector();
         pPlotCurve->clearYAxisVector();
         for (int i = 0; i < vars.count(); i++){
-          pPlotCurve->addXAxisValue(i);
+          pPlotCurve->addXAxisValue(i+1);
           pPlotCurve->addYAxisValue(res[i]);
         }
         pPlotCurve->setData(pPlotCurve->getXAxisVector(), pPlotCurve->getYAxisVector(), pPlotCurve->getSize());
         pPlotCurve->attach(mpPlot);
-        mpPlot->setFooter(QString("t = %1 " + getTimeUnit()).arg(time*timeUnitFactor,0,'g',3));
-        mpPlot->replot();
+        updateTimeText();
         delete[] res;
       }
       // if plottype is PLOT then check which requested variables are not found in the file
@@ -1117,7 +1119,6 @@ void PlotWindow::plotArrayParametric(double time, PlotCurve *pPlotCurve)
   QString xVariable, yVariable, xTitle, yTitle;
   int pair = 0;
   setTime(time);
-  double timeUnitFactor = getTimeUnitFactor(getTimeUnit());
   if (mVariablesList.isEmpty())
     throw NoVariableException(QString("No variables specified!").toStdString().c_str());
   else if (mVariablesList.size()%2 != 0)
@@ -1165,11 +1166,11 @@ void PlotWindow::plotArrayParametric(double time, PlotCurve *pPlotCurve)
         throw PlotException(tr("Interval size not specified.").toStdString().c_str());
       }
       //Read in timevector
-      double timeVals[intervalSize];
-      readPLTDataset(mpTextStream, "time", intervalSize, timeVals);
+      auto timeVals = std::make_unique<double[]>(intervalSize);
+      readPLTDataset(mpTextStream, "time", intervalSize, timeVals.get());
       //Find indexes and alpha to interpolate data in particular time
       double alpha;
-      int it = setupInterp(timeVals, time, intervalSize, alpha);
+      int it = setupInterp(timeVals.get(), time, intervalSize, alpha);
       if (it < 0) {
         mFile.close();
         throw PlotException("Time out of bounds.");
@@ -1197,8 +1198,7 @@ void PlotWindow::plotArrayParametric(double time, PlotCurve *pPlotCurve)
       }
       pPlotCurve->setData(pPlotCurve->getXAxisVector(), pPlotCurve->getYAxisVector(), pPlotCurve->getSize());
       pPlotCurve->attach(mpPlot);
-      mpPlot->setFooter(QString("t = %1 " + getTimeUnit()).arg(time*timeUnitFactor,0,'g',3));
-      mpPlot->replot();
+      updateTimeText();
       mFile.close();
     }
     //    //PLOT CSV
@@ -1265,8 +1265,7 @@ void PlotWindow::plotArrayParametric(double time, PlotCurve *pPlotCurve)
       }
       pPlotCurve->setData(pPlotCurve->getXAxisVector(), pPlotCurve->getYAxisVector(), pPlotCurve->getSize());
       pPlotCurve->attach(mpPlot);
-      mpPlot->setFooter(QString("t = %1 " + getTimeUnit()).arg(time*timeUnitFactor,0,'g',3));
-      mpPlot->replot();
+      updateTimeText();
       omc_free_csv_reader(csvReader);
     }
     //PLOT MAT
@@ -1338,8 +1337,7 @@ void PlotWindow::plotArrayParametric(double time, PlotCurve *pPlotCurve)
       }
       pPlotCurve->setData(pPlotCurve->getXAxisVector(), pPlotCurve->getYAxisVector(), pPlotCurve->getSize());
       pPlotCurve->attach(mpPlot);
-      mpPlot->setFooter(QString("t = %1 " + getTimeUnit()).arg(time*timeUnitFactor,0,'g',3));
-      mpPlot->replot();
+      updateTimeText();
       omc_free_matlab4_reader(&reader);
     }
   }
@@ -1735,7 +1733,7 @@ void PlotWindow::printPlot()
 
   printer.setDocName("OMPlot");
   printer.setCreator("Plot Window");
-  printer.setOrientation(QPrinter::Landscape);
+  printer.setPageOrientation(QPageLayout::Landscape);
 
   QPrintDialog dialog(&printer);
   if ( dialog.exec() )
@@ -1796,14 +1794,13 @@ void PlotWindow::fitInView()
 
 void PlotWindow::setLogX(bool on)
 {
-  if (on) {
 #if QWT_VERSION >= 0x060100
     mpPlot->setAxisScaleEngine(QwtPlot::xBottom, new QwtLogScaleEngine);
 #else
     mpPlot->setAxisScaleEngine(QwtPlot::xBottom, new QwtLog10ScaleEngine);
 #endif
   } else {
-    mpPlot->setAxisScaleEngine(QwtPlot::xBottom, new QwtLinearScaleEngine);
+    mpPlot->setAxisScaleEngine(QwtPlot::xBottom, new LinearScaleEngine);
   }
   mpPlot->setAxisAutoScale(QwtPlot::xBottom);
   bool state = mpLogXCheckBox->blockSignals(true);
@@ -1821,7 +1818,7 @@ void PlotWindow::setLogY(bool on)
     mpPlot->setAxisScaleEngine(QwtPlot::yLeft, new QwtLog10ScaleEngine);
 #endif
   } else {
-    mpPlot->setAxisScaleEngine(QwtPlot::yLeft, new QwtLinearScaleEngine);
+    mpPlot->setAxisScaleEngine(QwtPlot::yLeft, new LinearScaleEngine);
   }
   mpPlot->setAxisAutoScale(QwtPlot::yLeft);
   bool state = mpLogYCheckBox->blockSignals(true);
@@ -2282,9 +2279,6 @@ void SetupDialog::applySetup()
     mpPlotWindow->setYRange(mpYMinimumTextBox->text().toDouble(), mpYMaximumTextBox->text().toDouble());
   }
   // replot
-  mpPlotWindow->getPlot()->getXScaleDraw()->invalidateCache();
-  mpPlotWindow->getPlot()->getYScaleDraw()->invalidateCache();
-  mpPlotWindow->getPlot()->updateLayout();
   mpPlotWindow->getPlot()->replot();
   if (requiresFitInView) {
     mpPlotWindow->fitInView();

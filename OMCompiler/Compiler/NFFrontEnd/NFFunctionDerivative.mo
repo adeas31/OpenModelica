@@ -172,12 +172,37 @@ public
 
     for tpl in fnDer.conditions loop
       (_, id, condition) := tpl;
-      subMods := SCode.NAMEMOD(conditionToString(condition), SCode.MOD(SCode.NOT_FINAL(), SCode.NOT_EACH(), {}, SOME(Absyn.CREF(Absyn.CREF_IDENT(Util.makeQuotedIdentifier(id), {}))), info)) :: subMods;
+      subMods := SCode.NAMEMOD(conditionToString(condition), SCode.MOD(SCode.NOT_FINAL(), SCode.NOT_EACH(), {}, SOME(Absyn.CREF(Absyn.CREF_IDENT(id, {}))), info)) :: subMods;
     end for;
 
-    mod := SCode.MOD(SCode.NOT_FINAL(), SCode.NOT_EACH(), orderMod::subMods, SOME(Absyn.CREF(Absyn.CREF_IDENT(Util.makeQuotedIdentifier(AbsynUtil.pathString(InstNode.scopePath(fnDer.derivativeFn))),{}))), info);
+    mod := SCode.MOD(SCode.NOT_FINAL(), SCode.NOT_EACH(), orderMod::subMods, SOME(Absyn.CREF(Absyn.CREF_IDENT(AbsynUtil.pathString(InstNode.scopePath(fnDer.derivativeFn)),{}))), info);
     subMod := SCode.NAMEMOD("derivative", mod);
   end toSubMod;
+
+  function perfectFit
+    "checks if the derivative is a perfect fit for specified interface map"
+    input FunctionDerivative fnDer;
+    input UnorderedMap<String, Boolean> interface_map;
+    output Boolean b = true;
+  protected
+    String name;
+    Condition cond;
+  algorithm
+    for condition in fnDer.conditions loop
+      (_, name, cond) := condition;
+      // if a zero derivative is required but the argument is not in the map
+      // this function derivative cannot be used
+      if cond == Condition.ZERO_DERIVATIVE and not UnorderedMap.contains(name, interface_map) then
+        b := false;
+        return;
+      end if;
+    end for;
+    // the function derivative is a perfect fit, add all conditions to the interface
+    for condition in fnDer.conditions loop
+      (_, name, _) := condition;
+      UnorderedMap.add(name, true, interface_map);
+    end for;
+  end perfectFit;
 
 protected
 

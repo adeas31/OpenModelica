@@ -24,6 +24,11 @@ package builtin
     output Boolean nb;
   end boolNot;
 
+  function stringEmpty
+    input String s;
+    output Boolean b;
+  end stringEmpty;
+
   uniontype SourceInfo
     record SOURCEINFO
       String fileName;
@@ -62,6 +67,8 @@ package Absyn
       Boolean encapsulatedPrefix;
       Restriction restriction;
       ClassDef body;
+      list<String> commentsBeforeEnd;
+      list<String> commentsAfterEnd;
       builtin.SourceInfo info;
     end CLASS;
   end Class;
@@ -447,6 +454,10 @@ package Absyn
       Option<ConstrainClass> constrainClass;
       builtin.SourceInfo info;
     end REDECLARATION;
+
+    record ELEMENTARGCOMMENT
+      String comment;
+    end ELEMENTARGCOMMENT;
   end ElementArg;
 
   uniontype RedeclareKeywords
@@ -632,6 +643,16 @@ package Absyn
       Exp index;
     end DOT;
 
+    record EXPRESSIONCOMMENT
+      list<String> commentsBefore;
+      Exp exp;
+      list<String> commentsAfter;
+    end EXPRESSIONCOMMENT;
+
+    record SUBSCRIPTED_EXP
+      Exp exp;
+      list<Subscript> subscripts;
+    end SUBSCRIPTED_EXP;
   end Exp;
 
   uniontype Case
@@ -902,6 +923,11 @@ package Dump
     input Boolean inLhs;
     output Boolean outShouldParenthesize;
   end shouldParenthesize;
+
+  function shouldSeparateAfterElementArg
+    input list<Absyn.ElementArg> args;
+    output list<tuple<Absyn.ElementArg,Boolean>> outArgs;
+  end shouldSeparateAfterElementArg;
 
   uniontype DumpOptions
     record DUMPOPTIONS

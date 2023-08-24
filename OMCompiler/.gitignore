@@ -10,6 +10,7 @@
 *.stamp
 **/*.dylib.dSYM/
 *.tmp
+*.lo
 
 # autoconf
 autom4te.cache/
@@ -100,6 +101,7 @@ SimulationRuntime/cpp/.cproject
 SimulationRuntime/cpp/confdefs.h
 SimulationRuntime/ParModelica/Makefile
 SimulationRuntime/ParModelica/auto/Makefile
+SimulationRuntime/ParModelica/auto/Makefile.dependencies
 SimulationRuntime/ParModelica/explicit/Makefile
 SimulationRuntime/ParModelica/explicit/openclrt/Makefile
 SimulationRuntime/build_c/
@@ -112,6 +114,30 @@ SimulationRuntime/OMSI/Build_MSVC/
 SimulationRuntime/OMSI/Build_MSVC_static/
 SimulationRuntime/OMSIC/Build_dynamic/
 SimulationRuntime/OMSIC/Build_static/
+
+SimulationRuntime/ModelicaExternalC/BuildProjects/autotools/.libs/
+SimulationRuntime/ModelicaExternalC/BuildProjects/autotools/AUTHORS
+SimulationRuntime/ModelicaExternalC/BuildProjects/autotools/COPYING
+SimulationRuntime/ModelicaExternalC/BuildProjects/autotools/ChangeLog
+SimulationRuntime/ModelicaExternalC/BuildProjects/autotools/INSTALL
+SimulationRuntime/ModelicaExternalC/BuildProjects/autotools/Makefile
+SimulationRuntime/ModelicaExternalC/BuildProjects/autotools/Makefile.in
+SimulationRuntime/ModelicaExternalC/BuildProjects/autotools/NEWS
+SimulationRuntime/ModelicaExternalC/BuildProjects/autotools/aclocal.m4
+SimulationRuntime/ModelicaExternalC/BuildProjects/autotools/compile
+SimulationRuntime/ModelicaExternalC/BuildProjects/autotools/config.guess
+SimulationRuntime/ModelicaExternalC/BuildProjects/autotools/config.sub
+SimulationRuntime/ModelicaExternalC/BuildProjects/autotools/configure
+SimulationRuntime/ModelicaExternalC/BuildProjects/autotools/depcomp
+SimulationRuntime/ModelicaExternalC/BuildProjects/autotools/install-sh
+SimulationRuntime/ModelicaExternalC/BuildProjects/autotools/libtool
+SimulationRuntime/ModelicaExternalC/BuildProjects/autotools/ltmain.sh
+SimulationRuntime/ModelicaExternalC/BuildProjects/autotools/m4/
+SimulationRuntime/ModelicaExternalC/BuildProjects/autotools/missing
+SimulationRuntime/ModelicaExternalC/C-Sources/.deps/
+SimulationRuntime/ModelicaExternalC/C-Sources/.dirstamp
+SimulationRuntime/ModelicaExternalC/C-Sources/zlib/.deps/
+SimulationRuntime/ModelicaExternalC/C-Sources/zlib/.dirstamp
 
 
 
@@ -174,6 +200,8 @@ SimulationRuntime/c/RuntimeSources.mo
 SimulationRuntime/**/test_files/*.jar
 SimulationRuntime/OMSICpp/build_msvc/
 SimulationRuntime/cpp/build_msvc/
+SimulationRuntime/c/libOpenModelicaRuntimeC.dll
+SimulationRuntime/c/libSimulationRuntimeC.dll
 # Visual Studio 2015/2017 cache/options directory
 
 SimulationRuntime/OMSICpp/.vs/
@@ -192,3 +220,4 @@ tags
 *clang_output*
 
 Compiler/Util/Autoconf.mo
+Compiler/boot/bomc/

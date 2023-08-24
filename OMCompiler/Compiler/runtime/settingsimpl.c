@@ -50,8 +50,7 @@
 #include <pwd.h>
 #endif
 
-#ifdef WIN32
-#define WIN32_LEAN_AND_MEAN
+#if defined(_WIN32)
 #include <windows.h>
 #endif
 
@@ -91,7 +90,7 @@ const char* SettingsImpl__getInstallationDirectoryPath(void) {
   return path &&*path ? path : "OPENMODELICA_BOOTSTRAPPING_STAGE_NO_OPENMODELICAHOME";
 }
 #else
-#if (defined(__linux__) || defined(__APPLE_CC__))
+#if (defined(__linux__) || defined(__APPLE_CC__) || defined(__FreeBSD__))
 /* Helper function to strip /bin/... or /lib/... from the executable path of omc */
 static void stripbinpath(char *omhome)
 {
@@ -113,7 +112,7 @@ static void stripbinpath(char *omhome)
 #endif
 
 /* Do not free or modify the returned variable of getInstallationDirectoryPath. It's part of the environment! */
-#if defined(__linux__) || defined(__APPLE_CC__)
+#if defined(__linux__) || defined(__APPLE_CC__)  || defined(__FreeBSD__)
 #include <dlfcn.h>
 
 const char* SettingsImpl__getInstallationDirectoryPath(void) {
@@ -189,6 +188,25 @@ char* Settings_getHomeDir(int runningTestsuite)
   if (omc_userHome == NULL) {
     omc_userHome = getenv("HOME");
   }
+  /* detect special chars in the path and is so convert to short name paths */
+  if (omc_userHome != NULL) {
+    int i, len = strlen(omc_userHome);
+    for (i = 0; i < len; i++)
+      if (!isascii(omc_userHome[i])) { break; }
+    /* we found a special char */
+    if (i < len) {
+      int length = GetShortPathName(omc_userHome, NULL, 0);
+      if (length != 0) {
+        /* no error, convert */
+        char* buff = (char*)omc_alloc_interface.malloc_atomic(length*sizeof(char));
+        length = GetShortPathName(omc_userHome, buff, length);
+        /* no error, all good */
+        if (length != 0) {
+          omc_userHome = buff;
+        }
+      }
+    }
+  }
 #endif
   if (omc_userHome == NULL || runningTestsuite) {
     return omc_alloc_interface.malloc_strdup("");
@@ -213,29 +231,15 @@ char* SettingsImpl__getModelicaPath(int runningTestsuite) {
     const char *path = runningTestsuite ? NULL : getenv("OPENMODELICALIBRARY");
     if (path != NULL)
     {
-        omc_modelicaPath = strdup(path);
+      omc_modelicaPath = strdup(path);
     }
     else
     {
-      /* get the install directory */
-      const char *omhome = SettingsImpl__getInstallationDirectoryPath();
-      if (omhome == NULL)
-        return NULL;
-      int lenOmhome = strlen(omhome);
       const char *homePath = Settings_getHomeDir(0);
-      assert(homePath != NULL || !runningTestsuite);
-      if (runningTestsuite) {
-        int lenHome = strlen(homePath);
-        omc_modelicaPath = (char*)malloc(lenHome+26);
-        snprintf(omc_modelicaPath, lenHome+26,"%s/.openmodelica/libraries/", homePath);
-      } else if (homePath == NULL) {
-        omc_modelicaPath = (char*)malloc(lenOmhome+15);
-        snprintf(omc_modelicaPath, lenOmhome+15,"%s/lib/omlibrary", omhome);
-      } else {
-        int lenHome = strlen(homePath);
-        omc_modelicaPath = (char*)omc_alloc_interface.malloc_atomic(lenOmhome+lenHome+41);
-        snprintf(omc_modelicaPath, lenOmhome+lenHome+41,"%s/lib/omlibrary%s%s/.openmodelica/libraries/", omhome, OMC_GROUP_DELIMITER, homePath);
-      }
+      assert(homePath != NULL);
+      int lenHome = strlen(homePath);
+      omc_modelicaPath = (char*)malloc(lenHome+26);
+      snprintf(omc_modelicaPath, lenHome+26,"%s/.openmodelica/libraries/", homePath);
     }
 
     omc_modelicaPath = covertToForwardSlashesInPlace(omc_modelicaPath);
@@ -338,7 +342,7 @@ extern const char* SettingsImpl__getTempDirectoryPath(void)
   if (tempDirectoryPath == NULL) {
   // On windows, set Temp directory path to Temp directory as returned by GetTempPath,
   // which is usually TMP or TEMP or windows catalogue.
-  #ifdef WIN32
+  #if defined(_WIN32)
     int numChars;
     char tempDirectory[1024];
       //extract the temp path
@@ -347,10 +351,8 @@ extern const char* SettingsImpl__getTempDirectoryPath(void)
       fprintf(stderr, "Error setting temppath in Kernel\n");
       exit(1);
     } else {
-      // Must do replacement in two steps, since the _replace function can not have similar source as target.
-      char *str = _replace(tempDirectory, (char*)"\\", (char*)"/");
-      tempDirectoryPath = _replace(str, (char*)"/", (char*)"\\\\");
-      GC_free(str);
+      tempDirectoryPath = strdup(tempDirectory);
+      tempDirectoryPath = covertToForwardSlashesInPlace(tempDirectoryPath);
     }
   #else
     const char* str = getenv("TMPDIR");
