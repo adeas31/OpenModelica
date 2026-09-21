@@ -165,6 +165,9 @@ public:
   int row() const;
   EquationTreeItem *parent() {return mpParentEquationTreeItem;}
   int getEquationIndex();
+  const OMEquation* getOMEquation() const {return mpOMEquation;}
+  QString getSection() const {return mpOMEquation ? mpOMEquation->section : QString();}
+  QString getTag() const {return mpOMEquation ? mpOMEquation->tag : QString();}
 private:
   const OMEquation *mpOMEquation = nullptr;
   QVector<EquationTreeItem*> mChildren;
@@ -176,7 +179,7 @@ class EquationTreeModel : public QAbstractItemModel
 {
   Q_OBJECT
 public:
-  EquationTreeModel(QObject *parent = nullptr);
+  EquationTreeModel(const QList<OMEquation*> &equations, QObject *parent = nullptr);
   int columnCount(const QModelIndex &parent = QModelIndex()) const;
   int rowCount(const QModelIndex &parent = QModelIndex()) const;
   QVariant headerData(int section, Qt::Orientation orientation, int role = Qt::DisplayRole) const;
@@ -186,8 +189,12 @@ public:
   void insertEquations(const QList<OMEquation*>& equations, bool nestedEquations);
   EquationTreeItem* findEquationTreeItem(int equationIndex, EquationTreeItem *pEquationTreeItem = 0) const;
   QModelIndex equationTreeItemIndex(const EquationTreeItem *pEquationTreeItem) const;
+  QString aliasedEquationText(const OMEquation *pOMEquation) const;
 private:
   EquationTreeItem *mpRootEquationTreeItem;
+  /*! The equations of the whole model, so that an alias equation can be displayed together
+   * with the text of the equation it is an alias of (issue #14643, proposal 1). */
+  const QList<OMEquation*> &mEquations;
 
   void insertNestedEquations(EquationTreeItem *pParentItem, int index, const QList<OMEquation*> &equations);
 };
@@ -197,8 +204,21 @@ class EquationTreeProxyModel : public QSortFilterProxyModel
   Q_OBJECT
 public:
   explicit EquationTreeProxyModel(QObject *parent = nullptr);
+  /*! Filters the equations by their kind, e.g. "alias" are shown or hidden together with the
+   * equations they are an alias of (issue #14643, proposal 1 and 4). */
+  void setEquationKindFilter(const QString &kind) {mEquationKindFilter = kind; invalidateFilter();}
+  QString getEquationKindFilter() const {return mEquationKindFilter;}
+  /*! When sorting by equation size is enabled the equations are sorted by their size (number of
+   * unknowns) instead of by their text. This way the biggest linear / nonlinear equation is sorted
+   * last (issue #14643, proposal 5). */
+  void setSortByEquationSize(bool enabled) {mSortByEquationSize = enabled; invalidate();}
+  bool getSortByEquationSize() const {return mSortByEquationSize;}
 protected:
+  virtual bool filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const override;
   virtual bool lessThan(const QModelIndex &left, const QModelIndex &right) const override;
+private:
+  QString mEquationKindFilter;
+  bool mSortByEquationSize = false;
 };
 
 class EquationTreeView : public QTreeView
@@ -274,6 +294,9 @@ private:
   QHash<QString,OMVariable> mVariables;
   QList<OMEquation*> mEquations;
   bool hasOperationsEnabled;
+  QSet<QString> mEquationKinds;
+  QList<QHash<int,const OMEquation*> > mEquationIndexMaps;
+  QString mSourceCodeEquationHelperMessage;
 
   void parseProfiling(QString fileName);
 private slots:

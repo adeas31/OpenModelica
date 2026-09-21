@@ -410,17 +410,71 @@ EquationTreeProxyModel::EquationTreeProxyModel(QObject *parent)
 }
 
 /*!
+ * \brief EquationTreeProxyModel::filterAcceptsRow
+ * Reimplementation of QSortFilterProxyModel::filterAcceptsRow to filter the equations by their kind,
+ * e.g. "alias" equations are shown or hidden together with the equations they are an alias of
+ * (issue #14643, proposal 1 and 4). If a parent item is accepted all its children are accepted, so
+ * that the equations are always displayed in their nested structure.
+ * \param sourceRow
+ * \param sourceParent
+ * \return
+ */
+bool EquationTreeProxyModel::filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const
+{
+  if (mEquationKindFilter.isEmpty() || mEquationKindFilter == "all") {
+    return true;
+  }
+
+  QModelIndex index = sourceModel()->index(sourceRow, 0, sourceParent);
+  if (!index.isValid()) {
+    return false;
+  }
+
+  /* if any of the children matches the filter, then the current index matches the filter as well,
+   * so that equations are not hidden together with their nested equations. */
+  int rows = sourceModel()->rowCount(index);
+  for (int i = 0; i < rows; ++i) {
+    if (filterAcceptsRow(i, index)) {
+      return true;
+    }
+  }
+
+  EquationTreeItem *pEquationTreeItem = static_cast<EquationTreeItem*>(index.internalPointer());
+  if (pEquationTreeItem && !pEquationTreeItem->isRootItem()) {
+    const OMEquation *pOMEquation = pEquationTreeItem->getOMEquation();
+    if (pOMEquation && pOMEquation->tag == mEquationKindFilter) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/*!
  * \brief EquationTreeProxyModel::lessThan
- * Reimplementation of QSortFilterProxyModel::lessThan to sort the equations in natural order.
+ * Reimplementation of QSortFilterProxyModel::lessThan to sort the equations in natural order or,
+ * when sorting by equation size is enabled, by the number of unknowns of the linear / nonlinear
+ * equations so that the biggest equation is sorted last (issue #14643, proposal 5).
  * \param left
  * \param right
  * \return
  */
 bool EquationTreeProxyModel::lessThan(const QModelIndex &left, const QModelIndex &right) const
 {
-  QVariant l = (left.model() ? left.model()->data(left) : QVariant());
-  QVariant r = (right.model() ? right.model()->data(right) : QVariant());
-  return StringHandler::naturalSort(l.toString(), r.toString());
+  if (mSortByEquationSize) {
+    const EquationTreeItem *pLeftEquationTreeItem = static_cast<const EquationTreeItem*>(left.internalPointer());
+    const EquationTreeItem *pRightEquationTreeItem = static_cast<const EquationTreeItem*>(right.internalPointer());
+    if (pLeftEquationTreeItem && pRightEquationTreeItem) {
+      const OMEquation *pLeftOMEquation = pLeftEquationTreeItem->getOMEquation();
+      const OMEquation *pRightOMEquation = pRightEquationTreeItem->getOMEquation();
+      if (pLeftOMEquation && pRightOMEquation && pLeftOMEquation->unknowns != pRightOMEquation->unknowns) {
+        return pLeftOMEquation->unknowns < pRightOMEquation->unknowns;
+      }
+    }
+  }
+  QString leftEquation = left.model() ? left.model()->data(left).toString() : QString();
+  QString rightEquation = right.model() ? right.model()->data(right).toString() : QString();
+  return StringHandler::naturalSort(leftEquation, rightEquation);
 }
 
 TVariablesTreeView::TVariablesTreeView(TransformationsWidget *pTransformationsWidget)
@@ -580,8 +634,8 @@ int EquationTreeItem::getEquationIndex()
   return mpOMEquation ? mpOMEquation->index : -1;
 }
 
-EquationTreeModel::EquationTreeModel(QObject *parent)
-  : QAbstractItemModel(parent)
+EquationTreeModel::EquationTreeModel(const QList<OMEquation*> &equations, QObject *parent)
+  : QAbstractItemModel(parent), mEquations(equations)
 {
   mpRootEquationTreeItem = new EquationTreeItem(nullptr, nullptr, true);
 }
@@ -704,7 +758,59 @@ QVariant EquationTreeModel::data(const QModelIndex &index, int role) const
   }
 
   EquationTreeItem *pEquationTreeItem = static_cast<EquationTreeItem*>(index.internalPointer());
+  if (!pEquationTreeItem) {
+    return QVariant();
+  }
+
+  if (index.column() == 2) { /* equation column */
+    switch (role)
+    {
+      case Qt::DisplayRole:
+      case Qt::ToolTipRole:
+        return aliasedEquationText(pEquationTreeItem->getOMEquation());
+      default:
+        return QVariant();
+    }
+  }
   return pEquationTreeItem->data(index.column(), role);
+}
+
+/*!
+ * \brief EquationTreeModel::aliasedEquationText
+ * Returns the text of an equation, resolving an alias equation to the equation it is an alias of
+ * so that e.g. "(alias) 63" is displayed together with the actual text of equation 63. This is
+ * proposal 1 of issue #14643. The alias equation has the tag "alias" and its text holds nothing but
+ * the index of the equation it points at, here "63".
+ * \param pOMEquation
+ * \return
+ */
+QString EquationTreeModel::aliasedEquationText(const OMEquation *pOMEquation) const
+{
+  if (!pOMEquation) {
+    return QString();
+  }
+
+  QString text = pOMEquation->toString();
+
+  /* The text of an alias equation e.g. "63" (and the tag is "alias"). Resolve it to the text of the
+   * equation it is an alias of so that "(alias) 63" is shown together with the actual text of 63. */
+  if (pOMEquation->tag == "alias" && !pOMEquation->text.isEmpty()) {
+    bool ok = false;
+    const int equationIndex = pOMEquation->text.at(0).toInt(&ok);
+    if (ok) {
+      foreach (const OMEquation *pEquation, mEquations) {
+        if (pEquation && pEquation->index == equationIndex) {
+          /* e.g. "(alias) 63: 63: x = 3" */
+          text = QString("%1: %2: %3").arg(pOMEquation->toString())
+                                       .arg(equationIndex)
+                                       .arg(pEquation->toString());
+          break;
+        }
+      }
+    }
+  }
+
+  return text;
 }
 
 /*!
@@ -863,7 +969,7 @@ TransformationsWidget::TransformationsWidget(QString infoJSONFullFileName, bool 
   /* Defined in tree view */
   Label *pDefinedInLabel = new Label(tr("Defined In Equations"));
   pDefinedInLabel->setObjectName("LabelWithBorder");
-  mpDefinedInEquationTreeModel = new EquationTreeModel(this);
+  mpDefinedInEquationTreeModel = new EquationTreeModel(mEquations, this);
   mpDefinedInEquationProxyModel = new EquationTreeProxyModel(this);
   mpDefinedInEquationProxyModel->setDynamicSortFilter(true);
   mpDefinedInEquationProxyModel->setSourceModel(mpDefinedInEquationTreeModel);
@@ -880,7 +986,7 @@ TransformationsWidget::TransformationsWidget(QString infoJSONFullFileName, bool 
   /* Used in tree widget  */
   Label *pUsedInLabel = new Label(tr("Used In Equations"));
   pUsedInLabel->setObjectName("LabelWithBorder");
-  mpUsedInEquationTreeModel = new EquationTreeModel(this);
+  mpUsedInEquationTreeModel = new EquationTreeModel(mEquations, this);
   mpUsedInEquationProxyModel = new EquationTreeProxyModel(this);
   mpUsedInEquationProxyModel->setDynamicSortFilter(true);
   mpUsedInEquationProxyModel->setSourceModel(mpUsedInEquationTreeModel);
@@ -914,7 +1020,7 @@ TransformationsWidget::TransformationsWidget(QString infoJSONFullFileName, bool 
   Label *pEquationBrowserLabel = new Label(tr("Equations"));
   pEquationBrowserLabel->setObjectName("LabelWithBorder");
   /* Equations tree view */
-  mpEquationTreeModel = new EquationTreeModel(this);
+  mpEquationTreeModel = new EquationTreeModel(mEquations, this);
   mpEquationProxyModel = new EquationTreeProxyModel(this);
   mpEquationProxyModel->setDynamicSortFilter(true);
   mpEquationProxyModel->setSourceModel(mpEquationTreeModel);
@@ -1484,6 +1590,8 @@ mpTVariableTreeProxyModel->setFilterRegularExpression(QRegularExpression());
             for (simdjson::ondemand::value v : arr) {
               if (!v.get(sv)) {
                 eq->text << QString::fromUtf8(sv.data(), sv.size());
+              } else if (!v.get(iv)) {
+                eq->text << QString::number(iv);
               }
             }
           }
